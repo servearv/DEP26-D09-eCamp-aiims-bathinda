@@ -4,8 +4,10 @@ import {
   MapPin, Phone, Mail, Clock, Tag, ChevronDown, ChevronRight,
   Activity, FileText, Stethoscope, School, ExternalLink,
   HeartPulse, Eye, Ear, Scan, Bell, ClipboardCheck, AlertCircle, Loader2,
-  ScrollText, RefreshCw, Filter, ShieldCheck
+  ScrollText, RefreshCw, Filter, ShieldCheck, Upload
 } from 'lucide-react';
+import AnalyticsPanel, { DepartmentBreakdownChart } from './components/AnalyticsCharts';
+import { AddStudentModal, CSVUploadPanel } from './components/StudentModals';
 
 type User = { username: string; role: string; name: string };
 
@@ -116,6 +118,7 @@ interface EventStats {
   normal: number;
   observation: number;
   referred: number;
+  absent: number;
   records: any[];
   staff: Volunteer[];
 }
@@ -493,21 +496,74 @@ function RescheduleModal({ event, onClose, onRescheduled, user }: {
   );
 }
 
-// ── Expanded panel (details + records — NO staff tab) ──
+// ── Expanded panel (details + records + students) ──
 function EventExpandedPanel({ eventId, event, user, onRefresh }: {
   eventId: number; event: EventData; user: User; onRefresh: () => void;
 }) {
-  const [activeSection, setActiveSection] = useState<'details' | 'records'>('details');
+  const [activeSection, setActiveSection] = useState<'details' | 'students' | 'records'>('details');
   const [stats, setStats] = useState<EventStats | null>(null);
+
+  // Students tab state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showCSVUpload, setShowCSVUpload] = useState(false);
+  const [studentList, setStudentList] = useState<any[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [classFilter, setClassFilter] = useState('');
+  const [sectionFilter, setSectionFilter] = useState('');
+  const [genderFilter, setGenderFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  // Records/chart tab filters
+  const [recClassFilter, setRecClassFilter] = useState('');
+  const [recSectionFilter, setRecSectionFilter] = useState('');
+  const [recGenderFilter, setRecGenderFilter] = useState('');
 
   useEffect(() => {
     if (activeSection === 'records') {
-      fetch(`/api/events/${eventId}/stats`).then(r => r.json()).then(setStats);
+      const params = new URLSearchParams();
+      if (recClassFilter) params.set('student_class', recClassFilter);
+      if (recSectionFilter) params.set('section', recSectionFilter);
+      if (recGenderFilter) params.set('gender', recGenderFilter);
+      const qs = params.toString();
+      fetch(`/api/events/${eventId}/stats${qs ? '?' + qs : ''}`).then(r => r.json()).then(setStats);
     }
+  }, [activeSection, eventId, recClassFilter, recSectionFilter, recGenderFilter]);
+
+  const fetchStudentList = () => {
+    setStudentsLoading(true);
+    fetch(`/api/students/search?event_id=${eventId}`)
+      .then(r => r.json())
+      .then(data => { setStudentList(data); setStudentsLoading(false); })
+      .catch(() => setStudentsLoading(false));
+  };
+
+  useEffect(() => {
+    if (activeSection === 'students') fetchStudentList();
   }, [activeSection, eventId]);
+
+  // Derived filter values
+  const classOptions = [...new Set(studentList.map(s => s.student_class).filter(Boolean))].sort();
+  const sectionOptions = [...new Set(studentList.map(s => s.section).filter(Boolean))].sort();
+
+  const filteredStudents = studentList.filter(s => {
+    if (classFilter && s.student_class !== classFilter) return false;
+    if (sectionFilter && s.section !== sectionFilter) return false;
+    if (genderFilter && s.gender !== genderFilter) return false;
+    if (statusFilter) {
+      if (statusFilter === 'Absent' && s.status !== 'Absent') return false;
+      if (statusFilter === 'Pending' && (s.is_examined || s.status === 'Absent')) return false;
+      if (statusFilter === 'N' && s.assessment !== 'N') return false;
+      if (statusFilter === 'O' && s.assessment !== 'O') return false;
+      if (statusFilter === 'R' && s.assessment !== 'R') return false;
+    }
+    return true;
+  });
+
+  const activeFilterCount = [classFilter, sectionFilter, genderFilter, statusFilter].filter(Boolean).length;
 
   const sectionBtns = [
     { key: 'details' as const, label: 'Details', icon: <MapPin className="w-3.5 h-3.5" /> },
+    { key: 'students' as const, label: 'Students', icon: <Users className="w-3.5 h-3.5" /> },
     { key: 'records' as const, label: 'Camp Records', icon: <FileText className="w-3.5 h-3.5" /> },
   ];
 
@@ -539,10 +595,140 @@ function EventExpandedPanel({ eventId, event, user, onRefresh }: {
           </div>
         )}
 
+        {/* STUDENTS TAB */}
+        {activeSection === 'students' && (
+          <div className="space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-white">Student Roster</h4>
+              <div className="flex items-center space-x-2">
+                <button onClick={() => setShowAddModal(true)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 border border-cyan-500/30 text-xs font-bold transition-all">
+                  <UserPlus className="w-3.5 h-3.5" /><span>Add Student</span>
+                </button>
+                <button onClick={() => setShowCSVUpload(true)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-bold transition-all">
+                  <Upload className="w-3.5 h-3.5" /><span>Excel Upload</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filter bar */}
+            <div className="flex items-center flex-wrap gap-2">
+              <span className="text-xs text-slate-500 font-medium">Filters:</span>
+              <select value={classFilter} onChange={e => setClassFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+                <option value="">All Classes</option>
+                {classOptions.map(c => <option key={c} value={c}>Class {c}</option>)}
+              </select>
+              <select value={sectionFilter} onChange={e => setSectionFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+                <option value="">All Sections</option>
+                {sectionOptions.map(s => <option key={s} value={s}>Section {s}</option>)}
+              </select>
+              <select value={genderFilter} onChange={e => setGenderFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+                <option value="">All Sex</option>
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+              </select>
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+                <option value="">All Statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="N">Normal</option>
+                <option value="O">Observation</option>
+                <option value="R">Referred</option>
+                <option value="Absent">Absent</option>
+              </select>
+              {activeFilterCount > 0 && (
+                <button onClick={() => { setClassFilter(''); setSectionFilter(''); setGenderFilter(''); setStatusFilter(''); }}
+                  className="text-xs text-red-400 underline">Clear ({activeFilterCount})</button>
+              )}
+              <span className="text-xs text-slate-600 ml-auto">{filteredStudents.length} students</span>
+            </div>
+
+            {/* Student roster table */}
+            {studentsLoading ? (
+              <p className="text-slate-400 text-sm text-center py-6">Loading students...</p>
+            ) : filteredStudents.length === 0 ? (
+              <p className="text-slate-500 text-sm text-center py-4">No students found.</p>
+            ) : (
+              <div className="overflow-x-auto max-h-80 overflow-y-auto rounded-xl border border-slate-800">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-950 text-slate-500 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Reg No</th>
+                      <th className="px-3 py-2 font-medium">Name</th>
+                      <th className="px-3 py-2 font-medium">Class</th>
+                      <th className="px-3 py-2 font-medium">Gender</th>
+                      <th className="px-3 py-2 font-medium">Age</th>
+                      <th className="px-3 py-2 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50">
+                    {filteredStudents.map((s: any) => {
+                      let statusLabel = s.status || 'Pending';
+                      let statusStyle = 'text-amber-400';
+                      if (s.is_examined) {
+                        if (s.assessment === 'N') { statusLabel = 'Normal'; statusStyle = 'text-emerald-400'; }
+                        else if (s.assessment === 'O') { statusLabel = 'Observation'; statusStyle = 'text-amber-400'; }
+                        else if (s.assessment === 'R') { statusLabel = 'Referred'; statusStyle = 'text-red-400'; }
+                        else { statusLabel = 'Examined'; statusStyle = 'text-blue-400'; }
+                      } else if (s.status === 'Absent') {
+                        statusStyle = 'text-slate-500';
+                      }
+                      return (
+                        <tr key={s.student_id} className="hover:bg-slate-800/30">
+                          <td className="px-3 py-2 text-slate-400">{s.registration_number || '—'}</td>
+                          <td className="px-3 py-2 text-white font-medium">{s.name}</td>
+                          <td className="px-3 py-2 text-slate-300">{s.student_class || '—'}{s.section ? `-${s.section}` : ''}</td>
+                          <td className="px-3 py-2 text-slate-300">{s.gender === 'M' ? 'Male' : s.gender === 'F' ? 'Female' : '—'}</td>
+                          <td className="px-3 py-2 text-slate-300">{s.age || '—'}</td>
+                          <td className={`px-3 py-2 font-semibold ${statusStyle}`}>{statusLabel}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Modals */}
+            {showAddModal && <AddStudentModal onClose={() => setShowAddModal(false)} onCreated={() => { setShowAddModal(false); fetchStudentList(); onRefresh(); }} userId={user.username} eventId={eventId} />}
+            {showCSVUpload && <CSVUploadPanel eventId={eventId} userId={user.username} onClose={() => setShowCSVUpload(false)} onDone={() => { setShowCSVUpload(false); fetchStudentList(); onRefresh(); }} />}
+          </div>
+        )}
+
         {/* CAMP RECORDS (with Active Volunteers at top) */}
         {activeSection === 'records' && (
           stats ? (
             <div className="space-y-4">
+              {/* Filters */}
+              <div className="flex items-center flex-wrap gap-2">
+                <Filter className="w-3.5 h-3.5 text-slate-500" />
+                <span className="text-xs text-slate-500 font-medium">Filters:</span>
+                <select value={recClassFilter} onChange={e => setRecClassFilter(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all">
+                  <option value="">All Classes</option>
+                  {['Nursery','LKG','UKG','1','2','3','4','5','6','7','8','9','10','11','12'].map(c => <option key={c} value={c}>Class {c}</option>)}
+                </select>
+                <select value={recSectionFilter} onChange={e => setRecSectionFilter(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all">
+                  <option value="">All Sections</option>
+                  {['A','B','C','D','E'].map(s => <option key={s} value={s}>Section {s}</option>)}
+                </select>
+                <select value={recGenderFilter} onChange={e => setRecGenderFilter(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all">
+                  <option value="">All Sex</option>
+                  <option value="M">Male</option>
+                  <option value="F">Female</option>
+                </select>
+                {(recClassFilter || recSectionFilter || recGenderFilter) && (
+                  <button onClick={() => { setRecClassFilter(''); setRecSectionFilter(''); setRecGenderFilter(''); }}
+                    className="text-xs text-red-400 hover:text-red-300 underline transition-colors">Clear</button>
+                )}
+              </div>
               {/* Active Volunteers */}
               {stats.staff.length > 0 && (
                 <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800">
@@ -569,6 +755,12 @@ function EventExpandedPanel({ eventId, event, user, onRefresh }: {
                 <MiniStat label="Observation" value={stats.observation} color="text-amber-400" />
                 <MiniStat label="Referred" value={stats.referred} color="text-red-400" />
               </div>
+
+              {/* Analytics Charts */}
+              <AnalyticsPanel data={{ ...stats, absent: stats.absent ?? 0 }} compact />
+
+              {/* Department Breakdown */}
+              <DepartmentBreakdownChart records={stats.records} />
 
               {/* Records */}
               {stats.records.length === 0 ? (
