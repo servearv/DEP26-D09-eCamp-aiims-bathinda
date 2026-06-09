@@ -78,8 +78,30 @@ export function RemarksBlock({ data }: { data: any }) {
 // ── Specialist-Specific Read-Only Cards ──
 
 export function EyeRecordCard({ d }: { d: any }) {
+  const eyeComplaints = d.eyeComplaints || { complaints: [], otherComplaint: '' };
+  const hasComplaints = (eyeComplaints.complaints || []).length > 0 || eyeComplaints.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Chief Complaints */}
+      {hasComplaints && (
+        <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-blue-600 uppercase tracking-wider block mb-1.5">Chief Complaints</span>
+          {(eyeComplaints.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(eyeComplaints.complaints || []).map((c: any, i: number) => (
+                <span key={i} className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md font-medium">
+                  {c.complaint}{c.side && c.complaint !== 'Spectacles' ? ` (${c.side === 'both' ? 'B/L' : c.side === 'left' ? 'L' : 'R'})` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {eyeComplaints.otherComplaint && (
+            <p className="text-xs text-blue-800 mt-1"><span className="font-semibold">Other:</span> {eyeComplaints.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2 text-center">
           <span className="text-[10px] text-green-600 uppercase tracking-wider block">Right Eye</span>
@@ -102,11 +124,36 @@ export function EyeRecordCard({ d }: { d: any }) {
 }
 
 export function DentalRecordCard({ d }: { d: any }) {
+  const dentalComplaints = d.dentalComplaints || { complaints: [], affectedTeeth: [], otherComplaint: '' };
+  const hasComplaints = (dentalComplaints.complaints || []).length > 0 || (dentalComplaints.affectedTeeth || []).length > 0 || dentalComplaints.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Chief Complaints */}
+      {hasComplaints && (
+        <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-sky-600 uppercase tracking-wider block mb-1.5">Chief Complaints</span>
+          {(dentalComplaints.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(dentalComplaints.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-sky-100 text-sky-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {(dentalComplaints.affectedTeeth || []).length > 0 && (
+            <p className="text-xs text-sky-800 mt-1">
+              <span className="font-semibold">Affected Teeth:</span> {(dentalComplaints.affectedTeeth || []).sort((a: number, b: number) => a - b).join(', ')}
+            </p>
+          )}
+          {dentalComplaints.otherComplaint && (
+            <p className="text-xs text-sky-800 mt-1"><span className="font-semibold">Other:</span> {dentalComplaints.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
       {d.teethGums && (
         <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
-          <span className="text-[10px] text-sky-600 uppercase tracking-wider">Teeth & Gums</span>
+          <span className="text-[10px] text-sky-600 uppercase tracking-wider">Teeth & Gums Findings</span>
           <p className="text-sm text-sky-800 mt-1 font-medium">{d.teethGums}</p>
         </div>
       )}
@@ -126,8 +173,72 @@ export function DentalRecordCard({ d }: { d: any }) {
 }
 
 export function ENTRecordCard({ d }: { d: any }) {
+  const entComplaints = d.entComplaints || {
+    ear: { complaints: [], otherComplaint: '' },
+    nose: { complaints: [], otherComplaint: '' },
+    throat: { complaints: [], otherComplaint: '' },
+  };
+  
+  const hasEarComplaints = (entComplaints.ear.complaints || []).length > 0 || entComplaints.ear.otherComplaint;
+  const hasNoseComplaints = (entComplaints.nose.complaints || []).length > 0 || entComplaints.nose.otherComplaint;
+  const hasThroatComplaints = (entComplaints.throat.complaints || []).length > 0 || entComplaints.throat.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Ear Chief Complaints */}
+      {hasEarComplaints && (
+        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-amber-600 uppercase tracking-wider block mb-1.5">👂 Ear Complaints</span>
+          {(entComplaints.ear.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(entComplaints.ear.complaints || []).map((c: any, i: number) => (
+                <span key={i} className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-medium">
+                  {c.complaint}{c.side ? ` (${c.side === 'both' ? 'B/L' : c.side === 'left' ? 'L' : 'R'})` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {entComplaints.ear.otherComplaint && (
+            <p className="text-xs text-amber-800 mt-1"><span className="font-semibold">Other:</span> {entComplaints.ear.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
+      {/* Nose Chief Complaints */}
+      {hasNoseComplaints && (
+        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-amber-600 uppercase tracking-wider block mb-1.5">👃 Nose Complaints</span>
+          {(entComplaints.nose.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(entComplaints.nose.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {entComplaints.nose.otherComplaint && (
+            <p className="text-xs text-amber-800 mt-1"><span className="font-semibold">Other:</span> {entComplaints.nose.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
+      {/* Throat Chief Complaints */}
+      {hasThroatComplaints && (
+        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-amber-600 uppercase tracking-wider block mb-1.5">🗣️ Throat Complaints</span>
+          {(entComplaints.throat.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(entComplaints.throat.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {entComplaints.throat.otherComplaint && (
+            <p className="text-xs text-amber-800 mt-1"><span className="font-semibold">Other:</span> {entComplaints.throat.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
+      {/* Examination Findings */}
       <div className="grid grid-cols-3 gap-2">
         {[
           { label: '👂 Ear', value: d.ear, key: 'ear' },
@@ -135,7 +246,7 @@ export function ENTRecordCard({ d }: { d: any }) {
           { label: '🗣 Throat', value: d.throat, key: 'throat' },
         ].map(item => (
           <div key={item.key} className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-            <span className="text-[10px] text-amber-600 uppercase tracking-wider block">{item.label}</span>
+            <span className="text-[10px] text-amber-600 uppercase tracking-wider block">Findings</span>
             <p className="text-sm text-amber-800 mt-1 font-medium leading-snug">{item.value || 'NAD'}</p>
           </div>
         ))}
@@ -146,11 +257,31 @@ export function ENTRecordCard({ d }: { d: any }) {
 }
 
 export function SkinRecordCard({ d }: { d: any }) {
+  const skinComplaints = d.skinComplaints || { complaints: [], otherComplaint: '' };
+  const hasComplaints = (skinComplaints.complaints || []).length > 0 || skinComplaints.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Chief Complaints */}
+      {hasComplaints && (
+        <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-violet-600 uppercase tracking-wider block mb-1.5">Chief Complaints</span>
+          {(skinComplaints.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(skinComplaints.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-violet-100 text-violet-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {skinComplaints.otherComplaint && (
+            <p className="text-xs text-violet-800 mt-1"><span className="font-semibold">Other:</span> {skinComplaints.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
       {d.skinExam && (
         <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
-          <span className="text-[10px] text-violet-600 uppercase tracking-wider">Skin, Nails & Hair</span>
+          <span className="text-[10px] text-violet-600 uppercase tracking-wider">Examination Findings</span>
           <p className="text-sm text-violet-800 mt-1 font-medium">{d.skinExam}</p>
         </div>
       )}
