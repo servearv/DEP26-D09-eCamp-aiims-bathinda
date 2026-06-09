@@ -6,6 +6,19 @@ import {
   Users, CheckCircle, Loader2, ClipboardList, Printer, Trash2, PlusCircle, FileText, RefreshCw, History
 } from 'lucide-react';
 import GeneralInfoForm, { GeneralInfoSummary } from './GeneralInfoForm';
+import { ComplaintSelector } from './components/complaints/ComplaintSelector';
+import { DentitionDiagram } from './components/complaints/DentitionDiagram';
+import { LateralitySelector } from './components/complaints/LateralitySelector';
+import { OtherComplaintInput } from './components/complaints/OtherComplaintInput';
+import {
+  DENTAL_COMPLAINTS,
+  ENT_EAR_COMPLAINTS,
+  ENT_NOSE_COMPLAINTS,
+  ENT_THROAT_COMPLAINTS,
+  OPHTHALMOLOGY_COMPLAINTS,
+  DERMATOLOGY_COMPLAINTS,
+} from './components/complaints/ComplaintTypes';
+import type { ChiefComplaint } from './components/complaints/ComplaintTypes';
 
 // Socket.IO client (optional)
 let io: any = null;
@@ -491,26 +504,116 @@ function ActiveCampsDirectory({ user, onVolunteer }: { user: User; onVolunteer: 
 // --- Ophthalmology Form ---
 function EyeExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
   const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  
+  // Initialize ophthalmology complaints data structure
+  const eyeComplaints = data.eyeComplaints || { complaints: [], otherComplaint: '' };
+  
+  const updateEyeComplaints = (field: string, value: any) => {
+    u('eyeComplaints', { ...eyeComplaints, [field]: value });
+  };
+  
+  // Handle eye complaint selection with laterality
+  const toggleEyeComplaint = (complaint: string) => {
+    const complaints: ChiefComplaint[] = eyeComplaints.complaints || [];
+    const existing = complaints.find((c: ChiefComplaint) => c.complaint === complaint);
+    
+    if (existing) {
+      // Remove if exists
+      const updated = complaints.filter((c: ChiefComplaint) => c.complaint !== complaint);
+      updateEyeComplaints('complaints', updated);
+    } else {
+      // Add with default laterality
+      const updated = [...complaints, { complaint, side: 'both' as const }];
+      updateEyeComplaints('complaints', updated);
+    }
+  };
+  
+  const updateEyeComplaintSide = (complaint: string, side: 'left' | 'right' | 'both') => {
+    const complaints: ChiefComplaint[] = eyeComplaints.complaints || [];
+    const updated = complaints.map((c: ChiefComplaint) =>
+      c.complaint === complaint ? { ...c, side } : c
+    );
+    updateEyeComplaints('complaints', updated);
+  };
+  
+  const selectedEyeComplaints = (eyeComplaints.complaints || []).map((c: ChiefComplaint) => c.complaint);
+  
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <SectionHeading title="Ophthalmology Examination" icon={<Eye className="w-4 h-4" />} />
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <FormSelect label="Vision - Right Eye" value={data.rightEye || '6/6'} onChange={v => u('rightEye', v)}
-          options={['6/6', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60', 'Other']} id="eye-r" disabled={disabled} />
-        <FormSelect label="Vision - Left Eye" value={data.leftEye || '6/6'} onChange={v => u('leftEye', v)}
-          options={['6/6', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60', 'Other']} id="eye-l" disabled={disabled} />
-        <div>
-          <label className={cls.label}>Spectacles / Lenses</label>
-          <div className="flex space-x-2">
-            {['Yes', 'No'].map(o => (
-              <button key={o} type="button" onClick={() => !disabled && u('accessories', o)} disabled={disabled}
-                className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.accessories === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>
-                {o}
-              </button>
-            ))}
+      
+      {/* Chief Complaints Section */}
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <ClipboardList className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Chief Complaints</h3>
+        </div>
+        
+        <ComplaintSelector
+          title="Select eye complaints"
+          complaints={OPHTHALMOLOGY_COMPLAINTS}
+          selected={selectedEyeComplaints}
+          onChange={(selected) => {
+            // Handle additions and removals
+            const current = selectedEyeComplaints;
+            const added = selected.filter(s => !current.includes(s));
+            const removed = current.filter(c => !selected.includes(c));
+            
+            added.forEach(c => toggleEyeComplaint(c));
+            removed.forEach(c => toggleEyeComplaint(c));
+          }}
+          disabled={disabled}
+        />
+        
+        {/* Laterality selection for each selected eye complaint (except Spectacles which is general) */}
+        {(eyeComplaints.complaints || [])
+          .filter((c: ChiefComplaint) => c.complaint !== 'Spectacles')
+          .map((c: ChiefComplaint) => (
+            <LateralitySelector
+              key={c.complaint}
+              complaint={c.complaint}
+              value={c.side}
+              onChange={(side) => updateEyeComplaintSide(c.complaint, side)}
+              disabled={disabled}
+              label={`Which eye for "${c.complaint}"?`}
+            />
+          ))}
+        
+        <OtherComplaintInput
+          value={eyeComplaints.otherComplaint || ''}
+          onChange={(value) => updateEyeComplaints('otherComplaint', value)}
+          disabled={disabled}
+          label="Other Eye Complaints"
+          placeholder="Describe any other eye complaints not listed above..."
+        />
+      </div>
+      
+      {/* Vision Assessment */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Eye className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Vision Assessment</h3>
+        </div>
+        
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <FormSelect label="Vision - Right Eye" value={data.rightEye || '6/6'} onChange={v => u('rightEye', v)}
+            options={['6/6', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60', 'Other']} id="eye-r" disabled={disabled} />
+          <FormSelect label="Vision - Left Eye" value={data.leftEye || '6/6'} onChange={v => u('leftEye', v)}
+            options={['6/6', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60', 'Other']} id="eye-l" disabled={disabled} />
+          <div>
+            <label className={cls.label}>Spectacles / Lenses</label>
+            <div className="flex space-x-2">
+              {['Yes', 'No'].map(o => (
+                <button key={o} type="button" onClick={() => !disabled && u('accessories', o)} disabled={disabled}
+                  className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.accessories === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>
+                  {o}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
+      
       <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
     </div>
   );
@@ -519,45 +622,109 @@ function EyeExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campNa
 // --- Dental Form ---
 function DentalExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
   const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  
+  // Initialize dental complaints data structure
+  const dentalComplaints = data.dentalComplaints || { complaints: [], affectedTeeth: [], otherComplaint: '' };
+  
+  const updateDentalComplaints = (field: string, value: any) => {
+    u('dentalComplaints', { ...dentalComplaints, [field]: value });
+  };
+  
+  const toggleTooth = (toothNumber: number) => {
+    const teeth = dentalComplaints.affectedTeeth || [];
+    const newTeeth = teeth.includes(toothNumber)
+      ? teeth.filter((t: number) => t !== toothNumber)
+      : [...teeth, toothNumber];
+    updateDentalComplaints('affectedTeeth', newTeeth);
+  };
+  
   return (
     <div className="space-y-6">
       <SectionHeading title="Dental Examination" icon={<span className="text-base">🦷</span>} />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <label htmlFor="dental-exam" className={cls.label}>
-            Teeth &amp; gums examination
-          </label>
-          <textarea
-            id="dental-exam"
-            value={data.teethGums || ''}
-            onChange={e => u('teethGums', e.target.value)}
-            disabled={disabled}
-            rows={6}
-            placeholder='e.g. "Caries CBA ABE"'
-            className={`${cls.textarea} min-h-[160px] disabled:opacity-50`}
-          />
+      
+      {/* Chief Complaints Section */}
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <ClipboardList className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Chief Complaints</h3>
         </div>
-        <div className="flex flex-col gap-6">
-          <div>
-            <label className={cls.label}>Dental implants</label>
-            <div className="flex gap-2">
-              {['Yes', 'No'].map(o => (
-                <button key={o} type="button" onClick={() => !disabled && u('implants', o)} disabled={disabled}
-                  className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.implants === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>{o}</button>
-              ))}
-            </div>
+        
+        <ComplaintSelector
+          title="Select presenting complaints"
+          complaints={DENTAL_COMPLAINTS}
+          selected={dentalComplaints.complaints || []}
+          onChange={(selected) => updateDentalComplaints('complaints', selected)}
+          disabled={disabled}
+        />
+        
+        <OtherComplaintInput
+          value={dentalComplaints.otherComplaint || ''}
+          onChange={(value) => updateDentalComplaints('otherComplaint', value)}
+          disabled={disabled}
+          label="Other Dental Complaints"
+          placeholder="Describe any other dental complaints not listed above..."
+        />
+      </div>
+      
+      {/* Dentition Diagram */}
+      <div className="space-y-3 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <span className="text-xl">🦷</span>
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Affected Teeth</h3>
+        </div>
+        <p className="text-sm text-[#6B7280]">Click on teeth to mark them as affected</p>
+        <DentitionDiagram
+          selectedTeeth={dentalComplaints.affectedTeeth || []}
+          onToothSelect={toggleTooth}
+          disabled={disabled}
+        />
+      </div>
+      
+      {/* Detailed Examination */}
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Scan className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Detailed Examination</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <label htmlFor="dental-exam" className={cls.label}>
+              Teeth &amp; gums examination findings
+            </label>
+            <textarea
+              id="dental-exam"
+              value={data.teethGums || ''}
+              onChange={e => u('teethGums', e.target.value)}
+              disabled={disabled}
+              rows={6}
+              placeholder='e.g. "Caries CBA ABE, Gingivitis present"'
+              className={`${cls.textarea} min-h-[160px] disabled:opacity-50`}
+            />
           </div>
-          <div>
-            <label className={cls.label}>Braces</label>
-            <div className="flex gap-2">
-              {['Yes', 'No'].map(o => (
-                <button key={o} type="button" onClick={() => !disabled && u('braces', o)} disabled={disabled}
-                  className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.braces === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>{o}</button>
-              ))}
+          <div className="flex flex-col gap-6">
+            <div>
+              <label className={cls.label}>Dental implants</label>
+              <div className="flex gap-2">
+                {['Yes', 'No'].map(o => (
+                  <button key={o} type="button" onClick={() => !disabled && u('implants', o)} disabled={disabled}
+                    className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.implants === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>{o}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className={cls.label}>Braces</label>
+              <div className="flex gap-2">
+                {['Yes', 'No'].map(o => (
+                  <button key={o} type="button" onClick={() => !disabled && u('braces', o)} disabled={disabled}
+                    className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.braces === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>{o}</button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       </div>
+      
       <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
     </div>
   );
@@ -566,14 +733,156 @@ function DentalExamForm({ data, onChange, disabled, doctorInfo, studentInfo, cam
 // --- ENT Form ---
 function ENTExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
   const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  
+  // Initialize ENT complaints data structure
+  const entComplaints = data.entComplaints || {
+    ear: { complaints: [], otherComplaint: '' },
+    nose: { complaints: [], otherComplaint: '' },
+    throat: { complaints: [], otherComplaint: '' },
+  };
+  
+  const updateENTComplaints = (section: string, field: string, value: any) => {
+    u('entComplaints', {
+      ...entComplaints,
+      [section]: { ...entComplaints[section], [field]: value }
+    });
+  };
+  
+  // Handle ear complaint selection with laterality
+  const toggleEarComplaint = (complaint: string) => {
+    const complaints: ChiefComplaint[] = entComplaints.ear.complaints || [];
+    const existing = complaints.find((c: ChiefComplaint) => c.complaint === complaint);
+    
+    if (existing) {
+      // Remove if exists
+      const updated = complaints.filter((c: ChiefComplaint) => c.complaint !== complaint);
+      updateENTComplaints('ear', 'complaints', updated);
+    } else {
+      // Add with default laterality
+      const updated = [...complaints, { complaint, side: 'both' as const }];
+      updateENTComplaints('ear', 'complaints', updated);
+    }
+  };
+  
+  const updateEarComplaintSide = (complaint: string, side: 'left' | 'right' | 'both') => {
+    const complaints: ChiefComplaint[] = entComplaints.ear.complaints || [];
+    const updated = complaints.map((c: ChiefComplaint) =>
+      c.complaint === complaint ? { ...c, side } : c
+    );
+    updateENTComplaints('ear', 'complaints', updated);
+  };
+  
+  const selectedEarComplaints = (entComplaints.ear.complaints || []).map((c: ChiefComplaint) => c.complaint);
+  
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <SectionHeading title="ENT Examination" icon={<Ear className="w-4 h-4" />} />
-      <div className="grid grid-cols-3 gap-4">
-        <FormInput label="Ear Examination" value={data.ear || ''} onChange={v => u('ear', v)} id="ent-ear" placeholder='e.g. "B/L EAC Wax"' disabled={disabled} />
-        <FormInput label="Nose Examination" value={data.nose || ''} onChange={v => u('nose', v)} id="ent-nose" placeholder="NAD or specify" disabled={disabled} />
-        <FormInput label="Throat Examination" value={data.throat || ''} onChange={v => u('throat', v)} id="ent-throat" placeholder="NAD or specify" disabled={disabled} />
+      
+      {/* EAR Section */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <span className="text-xl">👂</span>
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Ear Examination</h3>
+        </div>
+        
+        <ComplaintSelector
+          title="Select ear complaints"
+          complaints={ENT_EAR_COMPLAINTS}
+          selected={selectedEarComplaints}
+          onChange={(selected) => {
+            // Handle additions and removals
+            const current = selectedEarComplaints;
+            const added = selected.filter(s => !current.includes(s));
+            const removed = current.filter(c => !selected.includes(c));
+            
+            added.forEach(c => toggleEarComplaint(c));
+            removed.forEach(c => toggleEarComplaint(c));
+          }}
+          disabled={disabled}
+        />
+        
+        {/* Laterality selection for each selected ear complaint */}
+        {(entComplaints.ear.complaints || []).map((c: ChiefComplaint) => (
+          <LateralitySelector
+            key={c.complaint}
+            complaint={c.complaint}
+            value={c.side}
+            onChange={(side) => updateEarComplaintSide(c.complaint, side)}
+            disabled={disabled}
+          />
+        ))}
+        
+        <OtherComplaintInput
+          value={entComplaints.ear.otherComplaint || ''}
+          onChange={(value) => updateENTComplaints('ear', 'otherComplaint', value)}
+          disabled={disabled}
+          label="Other Ear Complaints"
+          placeholder="Describe any other ear complaints..."
+        />
       </div>
+      
+      {/* NOSE Section */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <span className="text-xl">👃</span>
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Nose Examination</h3>
+        </div>
+        
+        <ComplaintSelector
+          title="Select nose complaints"
+          complaints={ENT_NOSE_COMPLAINTS}
+          selected={entComplaints.nose.complaints || []}
+          onChange={(selected) => updateENTComplaints('nose', 'complaints', selected)}
+          disabled={disabled}
+        />
+        
+        <OtherComplaintInput
+          value={entComplaints.nose.otherComplaint || ''}
+          onChange={(value) => updateENTComplaints('nose', 'otherComplaint', value)}
+          disabled={disabled}
+          label="Other Nose Complaints"
+          placeholder="Describe any other nose complaints..."
+        />
+      </div>
+      
+      {/* THROAT Section */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <span className="text-xl">🗣️</span>
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Throat Examination</h3>
+        </div>
+        
+        <ComplaintSelector
+          title="Select throat complaints"
+          complaints={ENT_THROAT_COMPLAINTS}
+          selected={entComplaints.throat.complaints || []}
+          onChange={(selected) => updateENTComplaints('throat', 'complaints', selected)}
+          disabled={disabled}
+        />
+        
+        <OtherComplaintInput
+          value={entComplaints.throat.otherComplaint || ''}
+          onChange={(value) => updateENTComplaints('throat', 'otherComplaint', value)}
+          disabled={disabled}
+          label="Other Throat Complaints"
+          placeholder="Describe any other throat complaints..."
+        />
+      </div>
+      
+      {/* Detailed Examination Notes */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Scan className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Detailed Examination Notes</h3>
+        </div>
+        
+        <div className="grid grid-cols-3 gap-4">
+          <FormInput label="Ear Findings" value={data.ear || ''} onChange={v => u('ear', v)} id="ent-ear" placeholder='e.g. "B/L EAC Wax"' disabled={disabled} />
+          <FormInput label="Nose Findings" value={data.nose || ''} onChange={v => u('nose', v)} id="ent-nose" placeholder="NAD or specify" disabled={disabled} />
+          <FormInput label="Throat Findings" value={data.throat || ''} onChange={v => u('throat', v)} id="ent-throat" placeholder="NAD or specify" disabled={disabled} />
+        </div>
+      </div>
+      
       <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
     </div>
   );
@@ -582,13 +891,55 @@ function ENTExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campNa
 // --- Skin Form ---
 function SkinExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
   const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  
+  // Initialize dermatology complaints data structure
+  const skinComplaints = data.skinComplaints || { complaints: [], otherComplaint: '' };
+  
+  const updateSkinComplaints = (field: string, value: any) => {
+    u('skinComplaints', { ...skinComplaints, [field]: value });
+  };
+  
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <SectionHeading title="Dermatology Examination" icon={<Scan className="w-4 h-4" />} />
-      <div className="grid grid-cols-1 gap-4">
-        <FormInput label="Skin, Nails & Hair Examination" value={data.skinExam || ''} onChange={v => u('skinExam', v)}
-          id="skin-exam" placeholder='e.g. "Seborrheic dermatitis / crusting on scalp"' disabled={disabled} />
+      
+      {/* Chief Complaints Section */}
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <ClipboardList className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Chief Complaints</h3>
+        </div>
+        
+        <ComplaintSelector
+          title="Select dermatological complaints"
+          complaints={DERMATOLOGY_COMPLAINTS}
+          selected={skinComplaints.complaints || []}
+          onChange={(selected) => updateSkinComplaints('complaints', selected)}
+          disabled={disabled}
+        />
+        
+        <OtherComplaintInput
+          value={skinComplaints.otherComplaint || ''}
+          onChange={(value) => updateSkinComplaints('otherComplaint', value)}
+          disabled={disabled}
+          label="Other Skin/Hair/Nail Complaints"
+          placeholder="Describe any other dermatological complaints not listed above..."
+        />
       </div>
+      
+      {/* Detailed Examination */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Scan className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Detailed Examination</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 gap-4">
+          <FormInput label="Skin, Nails & Hair Examination Findings" value={data.skinExam || ''} onChange={v => u('skinExam', v)}
+            id="skin-exam" placeholder='e.g. "Seborrheic dermatitis / crusting on scalp"' disabled={disabled} />
+        </div>
+      </div>
+      
       <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
     </div>
   );
@@ -1114,8 +1465,30 @@ function RemarksBlock({ data }: { data: any }) {
 // ── Specialist-Specific Read-Only Cards ──
 
 function EyeRecordCard({ d }: { d: any }) {
+  const eyeComplaints = d.eyeComplaints || { complaints: [], otherComplaint: '' };
+  const hasComplaints = (eyeComplaints.complaints || []).length > 0 || eyeComplaints.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Chief Complaints */}
+      {hasComplaints && (
+        <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-blue-600 uppercase tracking-wider block mb-1.5">Chief Complaints</span>
+          {(eyeComplaints.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(eyeComplaints.complaints || []).map((c: any, i: number) => (
+                <span key={i} className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md font-medium">
+                  {c.complaint}{c.side && c.complaint !== 'Spectacles' ? ` (${c.side === 'both' ? 'B/L' : c.side === 'left' ? 'L' : 'R'})` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {eyeComplaints.otherComplaint && (
+            <p className="text-xs text-blue-800 mt-1"><span className="font-semibold">Other:</span> {eyeComplaints.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2 text-center">
           <span className="text-[10px] text-green-600 uppercase tracking-wider block">Right Eye</span>
@@ -1138,11 +1511,36 @@ function EyeRecordCard({ d }: { d: any }) {
 }
 
 function DentalRecordCard({ d }: { d: any }) {
+  const dentalComplaints = d.dentalComplaints || { complaints: [], affectedTeeth: [], otherComplaint: '' };
+  const hasComplaints = (dentalComplaints.complaints || []).length > 0 || (dentalComplaints.affectedTeeth || []).length > 0 || dentalComplaints.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Chief Complaints */}
+      {hasComplaints && (
+        <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-sky-600 uppercase tracking-wider block mb-1.5">Chief Complaints</span>
+          {(dentalComplaints.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(dentalComplaints.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-sky-100 text-sky-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {(dentalComplaints.affectedTeeth || []).length > 0 && (
+            <p className="text-xs text-sky-800 mt-1">
+              <span className="font-semibold">Affected Teeth:</span> {(dentalComplaints.affectedTeeth || []).sort((a: number, b: number) => a - b).join(', ')}
+            </p>
+          )}
+          {dentalComplaints.otherComplaint && (
+            <p className="text-xs text-sky-800 mt-1"><span className="font-semibold">Other:</span> {dentalComplaints.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
       {d.teethGums && (
         <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
-          <span className="text-[10px] text-sky-600 uppercase tracking-wider">Teeth & Gums</span>
+          <span className="text-[10px] text-sky-600 uppercase tracking-wider">Teeth & Gums Findings</span>
           <p className="text-sm text-sky-800 mt-1 font-medium">{d.teethGums}</p>
         </div>
       )}
@@ -1162,8 +1560,72 @@ function DentalRecordCard({ d }: { d: any }) {
 }
 
 function ENTRecordCard({ d }: { d: any }) {
+  const entComplaints = d.entComplaints || {
+    ear: { complaints: [], otherComplaint: '' },
+    nose: { complaints: [], otherComplaint: '' },
+    throat: { complaints: [], otherComplaint: '' },
+  };
+  
+  const hasEarComplaints = (entComplaints.ear.complaints || []).length > 0 || entComplaints.ear.otherComplaint;
+  const hasNoseComplaints = (entComplaints.nose.complaints || []).length > 0 || entComplaints.nose.otherComplaint;
+  const hasThroatComplaints = (entComplaints.throat.complaints || []).length > 0 || entComplaints.throat.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Ear Chief Complaints */}
+      {hasEarComplaints && (
+        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-amber-600 uppercase tracking-wider block mb-1.5">👂 Ear Complaints</span>
+          {(entComplaints.ear.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(entComplaints.ear.complaints || []).map((c: any, i: number) => (
+                <span key={i} className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-medium">
+                  {c.complaint}{c.side ? ` (${c.side === 'both' ? 'B/L' : c.side === 'left' ? 'L' : 'R'})` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {entComplaints.ear.otherComplaint && (
+            <p className="text-xs text-amber-800 mt-1"><span className="font-semibold">Other:</span> {entComplaints.ear.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
+      {/* Nose Chief Complaints */}
+      {hasNoseComplaints && (
+        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-amber-600 uppercase tracking-wider block mb-1.5">👃 Nose Complaints</span>
+          {(entComplaints.nose.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(entComplaints.nose.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {entComplaints.nose.otherComplaint && (
+            <p className="text-xs text-amber-800 mt-1"><span className="font-semibold">Other:</span> {entComplaints.nose.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
+      {/* Throat Chief Complaints */}
+      {hasThroatComplaints && (
+        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-amber-600 uppercase tracking-wider block mb-1.5">🗣️ Throat Complaints</span>
+          {(entComplaints.throat.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(entComplaints.throat.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {entComplaints.throat.otherComplaint && (
+            <p className="text-xs text-amber-800 mt-1"><span className="font-semibold">Other:</span> {entComplaints.throat.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
+      {/* Examination Findings */}
       <div className="grid grid-cols-3 gap-2">
         {[
           { label: '👂 Ear', value: d.ear, key: 'ear' },
@@ -1171,7 +1633,7 @@ function ENTRecordCard({ d }: { d: any }) {
           { label: '🗣 Throat', value: d.throat, key: 'throat' },
         ].map(item => (
           <div key={item.key} className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-            <span className="text-[10px] text-amber-600 uppercase tracking-wider block">{item.label}</span>
+            <span className="text-[10px] text-amber-600 uppercase tracking-wider block">Findings</span>
             <p className="text-sm text-amber-800 mt-1 font-medium leading-snug">{item.value || 'NAD'}</p>
           </div>
         ))}
@@ -1182,11 +1644,31 @@ function ENTRecordCard({ d }: { d: any }) {
 }
 
 function SkinRecordCard({ d }: { d: any }) {
+  const skinComplaints = d.skinComplaints || { complaints: [], otherComplaint: '' };
+  const hasComplaints = (skinComplaints.complaints || []).length > 0 || skinComplaints.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Chief Complaints */}
+      {hasComplaints && (
+        <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-violet-600 uppercase tracking-wider block mb-1.5">Chief Complaints</span>
+          {(skinComplaints.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(skinComplaints.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-violet-100 text-violet-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {skinComplaints.otherComplaint && (
+            <p className="text-xs text-violet-800 mt-1"><span className="font-semibold">Other:</span> {skinComplaints.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
       {d.skinExam && (
         <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
-          <span className="text-[10px] text-violet-600 uppercase tracking-wider">Skin, Nails & Hair</span>
+          <span className="text-[10px] text-violet-600 uppercase tracking-wider">Examination Findings</span>
           <p className="text-sm text-violet-800 mt-1 font-medium">{d.skinExam}</p>
         </div>
       )}
