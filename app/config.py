@@ -19,6 +19,6 @@ class Config:
     # App specific
     SPECIALIST_ROLES = [
         'Community_Medicine', 'Dental', 'ENT',
-        'Eye_Specialist', 'Skin_Specialist', 'Other'
+        'Eye_Specialist', 'Skin_Specialist', 'Pediatrics', 'OBGYN', 'Other'
     ]
     ALL_ROLES = ['Admin', 'School POC'] + SPECIALIST_ROLES
