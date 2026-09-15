@@ -6,7 +6,7 @@ import string
 import psycopg2
 
 from app.db import get_db_conn
-from app.helpers import row_to_dict, user_public
+from app.helpers import hash_password, row_to_dict, user_public, verify_password
 from app.services.audit import log_audit
 from app.services.email import send_email_async
 
@@ -151,15 +151,24 @@ def api_login():
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
             "SELECT username, email, role, name, password, designation, specialization "
-            "FROM Users WHERE (LOWER(email) = LOWER(%s) OR LOWER(username) = LOWER(%s)) AND password = %s",
-            (identifier, identifier, password),
+            "FROM Users WHERE LOWER(email) = LOWER(%s) OR LOWER(username) = LOWER(%s)",
+            (identifier, identifier),
         )
         user = cur.fetchone()
 
-    if not user:
+    if not user or not verify_password(password, user["password"])[0]:
         return jsonify({"success": False, "message": "Invalid email or password"}), 401
 
     u = row_to_dict(user)
+    valid, needs_rehash = verify_password(password, u["password"])
+    if needs_rehash:
+        with get_db_conn() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE Users SET password = %s WHERE username = %s",
+                (hash_password(password), u["username"]),
+            )
+            conn.commit()
     pub = user_public(u)
 
     session.permanent = True
@@ -185,7 +194,7 @@ def api_set_password():
         cur = conn.cursor()
         cur.execute(
             "UPDATE Users SET password = %s WHERE username = %s",
-            (new_password, sess_user['username']),
+            (hash_password(new_password), sess_user['username']),
         )
         conn.commit()
 
@@ -215,12 +224,12 @@ def api_change_password():
         )
         user = cur.fetchone()
 
-        if not user or row_to_dict(user).get('password') != old_password:
+        if not user or not verify_password(old_password, row_to_dict(user).get('password'))[0]:
             return jsonify({"success": False, "message": "Current password is incorrect"}), 401
 
         cur.execute(
             "UPDATE Users SET password = %s WHERE username = %s",
-            (new_password, sess_user['username']),
+            (hash_password(new_password), sess_user['username']),
         )
         conn.commit()
 
