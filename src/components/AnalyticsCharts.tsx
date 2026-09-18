@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { SPECIALTIES } from '../constants/specialties';
 
 const STATUS_CONFIG = {
   normal:      { label: 'Normal',      color: '#10b981' },
@@ -147,11 +148,9 @@ const BAR_COLORS = {
 } as const;
 
 const DEPT_LABELS: Record<string, string> = {
+  ...Object.fromEntries(SPECIALTIES.map(s => [s.key, s.label])),
   Community_Medicine: 'Community Med.',
-  Dental: 'Dental',
-  ENT: 'ENT',
-  Eye_Specialist: 'Ophthalmology',
-  Skin_Specialist: 'Dermatology',
+  OBGYN: 'OBGYN',
 };
 
 type AssessKey = 'N' | 'O' | 'R';
@@ -169,7 +168,8 @@ export function DepartmentBreakdownChart({ records }: { records: any[] }) {
     if (!deptMap[cat]) deptMap[cat] = { N: 0, O: 0, R: 0, total: 0 };
     try {
       const d = JSON.parse(rec.json_data);
-      const a = d.assessment as string;
+      // Exam forms write `status`; older records may use `assessment`
+      const a = (d.status || d.assessment) as string;
       if (a === 'N' || a === 'O' || a === 'R') {
         deptMap[cat][a]++;
         deptMap[cat].total++;

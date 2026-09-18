@@ -104,3 +104,27 @@ export const DERMATOLOGY_COMPLAINTS = [
   'Acne',
   'Nail changes',
 ] as const;
+
+export const PEDIATRIC_COMPLAINTS = [
+  'Fever',
+  'Cough / cold',
+  'Abdominal pain',
+  'Loss of appetite',
+  'Poor weight gain',
+  'Recurrent infections',
+  'Worm infestation',
+  'Fatigue / weakness',
+  'Headache',
+  'Bed wetting',
+] as const;
+
+export const OBGYN_COMPLAINTS = [
+  'Painful periods',
+  'Irregular periods',
+  'Heavy bleeding',
+  'Delayed menarche',
+  'White discharge',
+  'Itching / irritation',
+  'Lower abdominal pain',
+  'Acne / excess hair',
+] as const;

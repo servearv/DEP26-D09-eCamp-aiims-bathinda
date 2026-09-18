@@ -56,16 +56,6 @@ def api_admin_delete_user(username):
         traceback.print_exc()
         return jsonify({"success": False, "message": "Failed to delete user due to associated records or DB error"}), 500
 
-@bp.route("/api/admin/audit-logs")
-def api_admin_audit_logs():
-    with get_db_conn() as conn:
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(
-            "SELECT * FROM Audit_Logs ORDER BY timestamp DESC LIMIT 50"
-        )
-        logs = cur.fetchall()
-    return jsonify(rows_to_list(logs))
-
 @bp.route("/api/admin/logs", methods=["GET"])
 def api_admin_logs():
     """Return audit log entries — Admin only."""
