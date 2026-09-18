@@ -4,8 +4,13 @@ import {
   MapPin, Phone, Mail, Clock, Tag, ChevronDown, ChevronRight,
   Activity, FileText, Stethoscope, School, ExternalLink,
   HeartPulse, Eye, Ear, Scan, Bell, ClipboardCheck, AlertCircle, Loader2,
-  ScrollText, RefreshCw, Filter, ShieldCheck
+  ScrollText, RefreshCw, Filter, ShieldCheck, Trash2, Upload, Printer
 } from 'lucide-react';
+import AnalyticsPanel, { DepartmentBreakdownChart } from './components/AnalyticsCharts';
+import { AddStudentModal, CSVUploadPanel } from './components/StudentModals';
+import { SPECIALTIES, SpecialtyIcon, specialtyDarkColor, specialtyLabel } from './constants/specialties';
+import { printSlips, fetchSlips, openPrintWindow } from './lib/printSlip';
+import DownloadDataButton from './components/DownloadDataButton';
 
 type User = { username: string; role: string; name: string };
 
@@ -20,14 +25,7 @@ const TAG_STYLES: Record<string, string> = {
 const TAGS = ['Upcoming', 'Ongoing', 'Completed', 'Cancelled'];
 
 // Specialist roles for registration
-const SPECIALIST_ROLES = [
-  { key: 'Community_Medicine', label: 'Community Medicine' },
-  { key: 'Dental', label: 'Dental' },
-  { key: 'ENT', label: 'ENT' },
-  { key: 'Eye_Specialist', label: 'Ophthalmology' },
-  { key: 'Skin_Specialist', label: 'Dermatology' },
-  { key: 'Other', label: 'Other' },
-];
+const SPECIALIST_ROLES = SPECIALTIES.map(s => ({ key: s.key, label: s.label }));
 
 const ALL_REGISTER_ROLES = [
   { key: 'Admin', label: 'Admin' },
@@ -37,36 +35,15 @@ const ALL_REGISTER_ROLES = [
 
 // Category display helpers
 function getCategoryIcon(cat: string) {
-  switch (cat) {
-    case 'Community_Medicine': return <HeartPulse className="w-3.5 h-3.5" />;
-    case 'Dental': return <span className="text-xs">🦷</span>;
-    case 'ENT': return <Ear className="w-3.5 h-3.5" />;
-    case 'Eye_Specialist': return <Eye className="w-3.5 h-3.5" />;
-    case 'Skin_Specialist': return <Scan className="w-3.5 h-3.5" />;
-    case 'Other': return <Stethoscope className="w-3.5 h-3.5" />;
-    default: return <Stethoscope className="w-3.5 h-3.5" />;
-  }
+  return <SpecialtyIcon specialty={cat} className="w-3.5 h-3.5" />;
 }
 
 function getCategoryColor(cat: string): string {
-  switch (cat) {
-    case 'Community_Medicine': return 'bg-rose-500/20 text-rose-400 border-rose-500/30';
-    case 'Dental': return 'bg-sky-500/20 text-sky-400 border-sky-500/30';
-    case 'ENT': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
-    case 'Eye_Specialist': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-    case 'Skin_Specialist': return 'bg-violet-500/20 text-violet-400 border-violet-500/30';
-    case 'Other': return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-    default: return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-  }
+  return specialtyDarkColor(cat);
 }
 
 function formatCategoryLabel(cat: string): string {
-  switch (cat) {
-    case 'Community_Medicine': return 'Community Medicine';
-    case 'Eye_Specialist': return 'Ophthalmology';
-    case 'Skin_Specialist': return 'Dermatology';
-    default: return cat;
-  }
+  return specialtyLabel(cat);
 }
 
 interface EventData {
@@ -117,6 +94,7 @@ interface EventStats {
   normal: number;
   observation: number;
   referred: number;
+  absent: number;
   records: any[];
   staff: Volunteer[];
 }
@@ -318,27 +296,29 @@ function EventsTab({ user, onAddNewSchool }: { user: User; onAddNewSchool: () =>
         <div className="bg-slate-900/40 backdrop-blur-xl rounded-2xl border border-slate-800/50 shadow-sm overflow-hidden divide-y divide-slate-800/50">
           {filtered.map(event => (
             <div key={event.event_id} className="group">
-              <button onClick={() => setExpandedId(expandedId === event.event_id ? null : event.event_id)}
-                className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-800/40 transition-colors text-left">
+              <div onClick={() => setExpandedId(expandedId === event.event_id ? null : event.event_id)}
+                className="w-full flex flex-col xl:flex-row xl:items-center justify-between px-5 py-4 hover:bg-slate-800/40 transition-colors text-left cursor-pointer gap-3 xl:gap-0">
                 <div className="flex items-center space-x-4 flex-1 min-w-0">
                   <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center flex-shrink-0">
                     <Calendar className="w-5 h-5 text-cyan-400" />
                   </div>
                   <div className="min-w-0">
                     <h4 className="text-white font-semibold truncate">{event.school_name}</h4>
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-xs text-slate-400 mt-0.5 truncate">
                       {formatDateDisplay(event.start_date)}{event.end_date ? ` → ${formatDateDisplay(event.end_date)}` : ''} · {event.operational_hours || 'TBD'}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center space-x-3 flex-shrink-0 ml-4">
-                  <span className="text-xs text-slate-500">
-                    <Users className="w-3.5 h-3.5 inline mr-1" />{event.staff_count ?? 0} staff
-                  </span>
-                  <span className="text-xs text-slate-500">
-                    <Activity className="w-3.5 h-3.5 inline mr-1" />{event.screened_count ?? 0}/{event.student_count ?? 0} screened
-                  </span>
-                  <div className="flex items-center space-x-2" onClick={e => e.stopPropagation()}>
+                <div className="flex flex-wrap xl:flex-nowrap items-center gap-3 xl:flex-shrink-0 xl:ml-4 pl-14 xl:pl-0">
+                  <div className="flex items-center space-x-3 whitespace-nowrap">
+                    <span className="text-xs text-slate-500">
+                      <Users className="w-3.5 h-3.5 inline mr-1" />{event.staff_count ?? 0} staff
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      <Activity className="w-3.5 h-3.5 inline mr-1" />{event.screened_count ?? 0}/{event.student_count ?? 0} screened
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2" onClick={e => e.stopPropagation()}>
                     <span className={`px-3 py-1 rounded-lg text-xs font-bold border ${TAG_STYLES[event.computed_status || event.tag] || TAG_STYLES.Upcoming}`}>
                       {event.computed_status || event.tag}
                     </span>
@@ -385,9 +365,11 @@ function EventsTab({ user, onAddNewSchool }: { user: User; onAddNewSchool: () =>
                       </button>
                     )}
                   </div>
-                  {expandedId === event.event_id ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                  <div className="ml-auto xl:ml-0 flex-shrink-0">
+                    {expandedId === event.event_id ? <ChevronDown className="w-4 h-4 text-slate-400" /> : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                  </div>
                 </div>
-              </button>
+              </div>
 
               {/* Expanded: Details + Records (staff tab removed) */}
               {expandedId === event.event_id && (
@@ -490,21 +472,96 @@ function RescheduleModal({ event, onClose, onRescheduled, user }: {
   );
 }
 
-// ── Expanded panel (details + records — NO staff tab) ──
+// ── Expanded panel (details + records + students) ──
 function EventExpandedPanel({ eventId, event, user, onRefresh }: {
   eventId: number; event: EventData; user: User; onRefresh: () => void;
 }) {
-  const [activeSection, setActiveSection] = useState<'details' | 'records'>('details');
+  const [activeSection, setActiveSection] = useState<'details' | 'students' | 'records'>('details');
   const [stats, setStats] = useState<EventStats | null>(null);
+
+  // Students tab state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showCSVUpload, setShowCSVUpload] = useState(false);
+  const [studentList, setStudentList] = useState<any[]>([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [classFilter, setClassFilter] = useState('');
+  const [sectionFilter, setSectionFilter] = useState('');
+  const [genderFilter, setGenderFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
+  // Records/chart tab filters
+  const [recClassFilter, setRecClassFilter] = useState('');
+  const [recSectionFilter, setRecSectionFilter] = useState('');
+  const [recGenderFilter, setRecGenderFilter] = useState('');
 
   useEffect(() => {
     if (activeSection === 'records') {
-      fetch(`/api/events/${eventId}/stats`).then(r => r.json()).then(setStats);
+      const params = new URLSearchParams();
+      if (recClassFilter) params.set('student_class', recClassFilter);
+      if (recSectionFilter) params.set('section', recSectionFilter);
+      if (recGenderFilter) params.set('gender', recGenderFilter);
+      const qs = params.toString();
+      fetch(`/api/events/${eventId}/stats${qs ? '?' + qs : ''}`).then(r => r.json()).then(setStats);
     }
+  }, [activeSection, eventId, recClassFilter, recSectionFilter, recGenderFilter]);
+
+  const fetchStudentList = () => {
+    setStudentsLoading(true);
+    fetch(`/api/students/search?event_id=${eventId}`)
+      .then(r => r.json())
+      .then(data => { setStudentList(data); setStudentsLoading(false); })
+      .catch(() => setStudentsLoading(false));
+  };
+
+  useEffect(() => {
+    if (activeSection === 'students') fetchStudentList();
   }, [activeSection, eventId]);
+
+  // Derived filter values
+  const classOptions = [...new Set(studentList.map(s => s.student_class).filter(Boolean))].sort();
+  const sectionOptions = [...new Set(studentList.map(s => s.section).filter(Boolean))].sort();
+
+  const filteredStudents = studentList.filter(s => {
+    if (classFilter && s.student_class !== classFilter) return false;
+    if (sectionFilter && s.section !== sectionFilter) return false;
+    if (genderFilter && s.gender !== genderFilter) return false;
+    if (statusFilter) {
+      if (statusFilter === 'Absent' && s.status !== 'Absent') return false;
+      if (statusFilter === 'Pending' && (s.is_examined || s.status === 'Absent')) return false;
+      if (statusFilter === 'N' && s.assessment !== 'N') return false;
+      if (statusFilter === 'O' && s.assessment !== 'O') return false;
+      if (statusFilter === 'R' && s.assessment !== 'R') return false;
+    }
+    return true;
+  });
+
+  const activeFilterCount = [classFilter, sectionFilter, genderFilter, statusFilter].filter(Boolean).length;
+
+  // Prescription/referral slips (one page per department visit)
+  const [slipBusy, setSlipBusy] = useState<'all' | number | null>(null);
+  const handlePrintSlips = async (studentId?: number) => {
+    const win = openPrintWindow();
+    if (!win) return;
+    setSlipBusy(studentId ?? 'all');
+    try {
+      const slips = await fetchSlips(eventId, studentId ? { studentId } : {});
+      if (!slips.length) {
+        win.close();
+        alert(studentId ? 'No prescription or referral for this student yet.' : 'No prescriptions or referrals in this camp yet.');
+        return;
+      }
+      printSlips(slips, win);
+    } catch (e: any) {
+      win.close();
+      alert(e?.message || 'Could not load slips');
+    } finally {
+      setSlipBusy(null);
+    }
+  };
 
   const sectionBtns = [
     { key: 'details' as const, label: 'Details', icon: <MapPin className="w-3.5 h-3.5" /> },
+    { key: 'students' as const, label: 'Students', icon: <Users className="w-3.5 h-3.5" /> },
     { key: 'records' as const, label: 'Camp Records', icon: <FileText className="w-3.5 h-3.5" /> },
   ];
 
@@ -536,10 +593,160 @@ function EventExpandedPanel({ eventId, event, user, onRefresh }: {
           </div>
         )}
 
+        {/* STUDENTS TAB */}
+        {activeSection === 'students' && (
+          <div className="space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-white">Student Roster</h4>
+              <div className="flex items-center space-x-2">
+                <button onClick={() => setShowAddModal(true)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 border border-cyan-500/30 text-xs font-bold transition-all">
+                  <UserPlus className="w-3.5 h-3.5" /><span>Add Student</span>
+                </button>
+                <button onClick={() => setShowCSVUpload(true)}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-bold transition-all">
+                  <Upload className="w-3.5 h-3.5" /><span>Excel Upload</span>
+                </button>
+                <button onClick={() => handlePrintSlips()} disabled={slipBusy !== null}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 text-xs font-bold transition-all disabled:opacity-50"
+                  title="One page per department prescription/referral">
+                  {slipBusy === 'all' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                  <span>Download all slips</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Filter bar */}
+            <div className="flex items-center flex-wrap gap-2">
+              <span className="text-xs text-slate-500 font-medium">Filters:</span>
+              <select value={classFilter} onChange={e => setClassFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+                <option value="">All Classes</option>
+                {classOptions.map(c => <option key={c} value={c}>Class {c}</option>)}
+              </select>
+              <select value={sectionFilter} onChange={e => setSectionFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+                <option value="">All Sections</option>
+                {sectionOptions.map(s => <option key={s} value={s}>Section {s}</option>)}
+              </select>
+              <select value={genderFilter} onChange={e => setGenderFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+                <option value="">All Sex</option>
+                <option value="M">Male</option>
+                <option value="F">Female</option>
+              </select>
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300">
+                <option value="">All Statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="N">Normal</option>
+                <option value="O">Observation</option>
+                <option value="R">Referred</option>
+                <option value="Absent">Absent</option>
+              </select>
+              {activeFilterCount > 0 && (
+                <button onClick={() => { setClassFilter(''); setSectionFilter(''); setGenderFilter(''); setStatusFilter(''); }}
+                  className="text-xs text-red-400 underline">Clear ({activeFilterCount})</button>
+              )}
+              <span className="text-xs text-slate-600 ml-auto">{filteredStudents.length} students</span>
+            </div>
+
+            {/* Student roster table */}
+            {studentsLoading ? (
+              <p className="text-slate-400 text-sm text-center py-6">Loading students...</p>
+            ) : filteredStudents.length === 0 ? (
+              <p className="text-slate-500 text-sm text-center py-4">No students found.</p>
+            ) : (
+              <div className="overflow-x-auto max-h-80 overflow-y-auto rounded-xl border border-slate-800">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-950 text-slate-500 sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">Reg No</th>
+                      <th className="px-3 py-2 font-medium">Name</th>
+                      <th className="px-3 py-2 font-medium">Class</th>
+                      <th className="px-3 py-2 font-medium">Gender</th>
+                      <th className="px-3 py-2 font-medium">Age</th>
+                      <th className="px-3 py-2 font-medium">Status</th>
+                      <th className="px-3 py-2 font-medium">Slips</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50">
+                    {filteredStudents.map((s: any) => {
+                      let statusLabel = s.status || 'Pending';
+                      let statusStyle = 'text-amber-400';
+                      if (s.is_examined) {
+                        if (s.assessment === 'N') { statusLabel = 'Normal'; statusStyle = 'text-emerald-400'; }
+                        else if (s.assessment === 'O') { statusLabel = 'Observation'; statusStyle = 'text-amber-400'; }
+                        else if (s.assessment === 'R') { statusLabel = 'Referred'; statusStyle = 'text-red-400'; }
+                        else { statusLabel = 'Examined'; statusStyle = 'text-blue-400'; }
+                      } else if (s.status === 'Absent') {
+                        statusStyle = 'text-slate-500';
+                      }
+                      return (
+                        <tr key={s.student_id} className="hover:bg-slate-800/30">
+                          <td className="px-3 py-2 text-slate-400">{s.registration_number || '—'}</td>
+                          <td className="px-3 py-2 text-white font-medium">{s.name}</td>
+                          <td className="px-3 py-2 text-slate-300">{s.student_class || '—'}{s.section ? `-${s.section}` : ''}</td>
+                          <td className="px-3 py-2 text-slate-300">{s.gender === 'M' ? 'Male' : s.gender === 'F' ? 'Female' : '—'}</td>
+                          <td className="px-3 py-2 text-slate-300">{s.age || '—'}</td>
+                          <td className={`px-3 py-2 font-semibold ${statusStyle}`}>{statusLabel}</td>
+                          <td className="px-3 py-2">
+                            {s.is_examined ? (
+                              <button onClick={() => handlePrintSlips(s.student_id)} disabled={slipBusy !== null}
+                                className="inline-flex items-center space-x-1 px-2 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 text-[11px] font-bold disabled:opacity-50"
+                                title="Print this student's department slips">
+                                {slipBusy === s.student_id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Printer className="w-3 h-3" />}
+                                <span>Slips</span>
+                              </button>
+                            ) : <span className="text-slate-600">—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Modals */}
+            {showAddModal && <AddStudentModal onClose={() => setShowAddModal(false)} onCreated={() => { setShowAddModal(false); fetchStudentList(); onRefresh(); }} userId={user.username} eventId={eventId} />}
+            {showCSVUpload && <CSVUploadPanel eventId={eventId} userId={user.username} onClose={() => setShowCSVUpload(false)} onDone={() => { setShowCSVUpload(false); fetchStudentList(); onRefresh(); }} />}
+          </div>
+        )}
+
         {/* CAMP RECORDS (with Active Volunteers at top) */}
         {activeSection === 'records' && (
           stats ? (
             <div className="space-y-4">
+              {/* Filters */}
+              <div className="flex items-center flex-wrap gap-2">
+                <Filter className="w-3.5 h-3.5 text-slate-500" />
+                <span className="text-xs text-slate-500 font-medium">Filters:</span>
+                <select value={recClassFilter} onChange={e => setRecClassFilter(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all">
+                  <option value="">All Classes</option>
+                  {['Nursery','LKG','UKG','1','2','3','4','5','6','7','8','9','10','11','12'].map(c => <option key={c} value={c}>Class {c}</option>)}
+                </select>
+                <select value={recSectionFilter} onChange={e => setRecSectionFilter(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all">
+                  <option value="">All Sections</option>
+                  {['A','B','C','D','E'].map(s => <option key={s} value={s}>Section {s}</option>)}
+                </select>
+                <select value={recGenderFilter} onChange={e => setRecGenderFilter(e.target.value)}
+                  className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:ring-1 focus:ring-cyan-500/50 outline-none transition-all">
+                  <option value="">All Sex</option>
+                  <option value="M">Male</option>
+                  <option value="F">Female</option>
+                </select>
+                {(recClassFilter || recSectionFilter || recGenderFilter) && (
+                  <button onClick={() => { setRecClassFilter(''); setRecSectionFilter(''); setRecGenderFilter(''); }}
+                    className="text-xs text-red-400 hover:text-red-300 underline transition-colors">Clear</button>
+                )}
+                <div className="ml-auto">
+                  <DownloadDataButton eventId={eventId} filters={{ student_class: recClassFilter, section: recSectionFilter, gender: recGenderFilter }} />
+                </div>
+              </div>
               {/* Active Volunteers */}
               {stats.staff.length > 0 && (
                 <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-800">
@@ -567,6 +774,12 @@ function EventExpandedPanel({ eventId, event, user, onRefresh }: {
                 <MiniStat label="Referred" value={stats.referred} color="text-red-400" />
               </div>
 
+              {/* Analytics Charts */}
+              <AnalyticsPanel data={{ ...stats, absent: stats.absent ?? 0 }} compact />
+
+              {/* Department Breakdown */}
+              <DepartmentBreakdownChart records={stats.records} />
+
               {/* Records */}
               {stats.records.length === 0 ? (
                 <p className="text-slate-500 text-sm text-center py-4">No records yet.</p>
@@ -587,7 +800,8 @@ function EventExpandedPanel({ eventId, event, user, onRefresh }: {
                         let assessment = '—';
                         try {
                           const d = JSON.parse(rec.json_data);
-                          assessment = d.assessment === 'N' ? 'Normal' : d.assessment === 'O' ? 'Observation' : d.assessment === 'R' ? 'Referred' : '—';
+                          const st = d.status || d.assessment;
+                          assessment = st === 'N' ? 'Normal' : st === 'O' ? 'Observation' : st === 'R' ? 'Referred' : '—';
                         } catch { }
                         const assessColor = assessment === 'Normal' ? 'text-emerald-400' : assessment === 'Referred' ? 'text-red-400' : assessment === 'Observation' ? 'text-amber-400' : 'text-slate-400';
                         return (
@@ -850,16 +1064,19 @@ const ModalInput = React.forwardRef<HTMLInputElement, {
 // ═══════════════════════════════════════════
 function RegisterTab({ user, defaultRole, onRoleConsumed }: { user: User; defaultRole?: string; onRoleConsumed?: () => void }) {
   const [f, setF] = useState({
-    email: '', name: '', role: 'Other', designation: '',
+    email: '', name: '', role: 'Admin', designation: '',
     // School POC fields
     school_name: '', school_address: '', poc_name: '', poc_designation: '', poc_phone: '',
   });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'error'; text: string } | null>(null);
+  const [successPopup, setSuccessPopup] = useState<{ email: string, role: string } | null>(null);
+  const [view, setView] = useState<'register' | 'manage'>('register');
 
   useEffect(() => {
     if (defaultRole) {
       setF(p => ({ ...p, role: defaultRole }));
+      setView('register');
       onRoleConsumed?.();
     }
   }, [defaultRole]);
@@ -895,10 +1112,12 @@ function RegisterTab({ user, defaultRole, onRoleConsumed }: { user: User; defaul
       });
       const data = await res.json();
       if (data.success) {
+        setSuccessPopup({ email: f.email, role: f.role });
         setF({
-          email: '', name: '', role: 'Other', designation: '',
+          email: '', name: '', role: 'Admin', designation: '',
           school_name: '', school_address: '', poc_name: '', poc_designation: '', poc_phone: '',
         });
+        setTimeout(() => setSuccessPopup(null), 5000);
       } else {
         setMessage({ type: 'error', text: data.message || 'Registration failed' });
       }
@@ -912,8 +1131,40 @@ function RegisterTab({ user, defaultRole, onRoleConsumed }: { user: User; defaul
   const isSchoolPOC = f.role === 'School POC';
   const isSpecialist = SPECIALIST_ROLES.some(r => r.key === f.role);
 
-  return (
-    <div className="max-w-xl mx-auto">
+  const registerForm = (
+    <div className="max-w-xl mx-auto relative">
+      <style>{`
+        @keyframes slideUpFade {
+          0% { opacity: 0; transform: translate(-50%, 20px) scale(0.95); }
+          100% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+        }
+      `}</style>
+      
+      {successPopup && (
+        <div className="fixed bottom-10 left-1/2 z-50 flex items-start gap-4 p-5 bg-slate-900 border border-emerald-500/50 rounded-2xl shadow-2xl"
+             style={{ animation: 'slideUpFade 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards' }}>
+          <div className="bg-emerald-500/20 p-2 rounded-full shrink-0">
+            <Check className="w-6 h-6 text-emerald-400" />
+          </div>
+          <div className="pr-8">
+            <h4 className="text-white font-bold mb-2 text-base tracking-wide">User created successfully</h4>
+            <div className="text-slate-300 text-sm space-y-1.5">
+              <p className="flex items-center gap-2">
+                <span className="text-slate-400">Email:</span> 
+                <span className="text-emerald-300 font-semibold">{successPopup.email}</span>
+              </p>
+              <p className="flex items-center gap-2">
+                <span className="text-slate-400">Role:</span> 
+                <span className="text-emerald-300 font-semibold">{successPopup.role}</span>
+              </p>
+            </div>
+          </div>
+          <button onClick={() => setSuccessPopup(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+      )}
+
       <div className="bg-slate-900/80 backdrop-blur-xl p-6 rounded-2xl border border-slate-800 shadow-xl">
         <h3 className="text-lg font-semibold text-white mb-5 flex items-center">
           <UserPlus className="w-5 h-5 mr-2 text-cyan-400" />
@@ -927,14 +1178,6 @@ function RegisterTab({ user, defaultRole, onRoleConsumed }: { user: User; defaul
         )}
 
         <form onSubmit={handleRegister} className="space-y-4">
-          {/* Email — always shown */}
-          <ModalInput label="Email *" value={f.email} onChange={v => upd('email', v)} placeholder="user@example.com" type="email" required />
-
-          {/* Name — for non-School-POC roles */}
-          {!isSchoolPOC && (
-            <ModalInput label="Full Name *" value={f.name} onChange={v => upd('name', v)} placeholder="e.g. Dr. Anil Kumar" required />
-          )}
-
           <div>
             <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Role</label>
             <div className="flex flex-wrap gap-2">
@@ -954,6 +1197,14 @@ function RegisterTab({ user, defaultRole, onRoleConsumed }: { user: User; defaul
               ))}
             </div>
           </div>
+
+          {/* Email — always shown */}
+          <ModalInput label="Email *" value={f.email} onChange={v => upd('email', v)} placeholder="user@example.com" type="email" required />
+
+          {/* Name — for non-School-POC roles */}
+          {!isSchoolPOC && (
+            <ModalInput label="Full Name *" value={f.name} onChange={v => upd('name', v)} placeholder="e.g. Dr. Anil Kumar" required />
+          )}
 
           {/* School POC specific fields */}
           {isSchoolPOC && (
@@ -977,6 +1228,189 @@ function RegisterTab({ user, defaultRole, onRoleConsumed }: { user: User; defaul
           </button>
         </form>
       </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6 max-w-4xl mx-auto relative">
+      <div className="flex justify-center space-x-3 mb-6">
+        <button onClick={() => setView('register')} className={`px-5 py-2.5 rounded-xl text-sm font-bold flex items-center space-x-2 transition-all ${view === 'register' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_12px_rgba(34,211,238,0.1)]' : 'bg-slate-900 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}>
+          <UserPlus className="w-4 h-4" />
+          <span>Register New User</span>
+        </button>
+        <button onClick={() => setView('manage')} className={`px-5 py-2.5 rounded-xl text-sm font-bold flex items-center space-x-2 transition-all ${view === 'manage' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 shadow-[0_0_12px_rgba(34,211,238,0.1)]' : 'bg-slate-900 text-slate-400 border border-slate-800 hover:bg-slate-800'}`}>
+          <Users className="w-4 h-4" />
+          <span>Manage Users</span>
+        </button>
+      </div>
+      
+      {view === 'register' ? registerForm : <ManageUsersList />}
+    </div>
+  );
+}
+
+function ManageUsersList() {
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  const fetchUsers = () => {
+    setLoading(true);
+    fetch('/api/admin/users')
+      .then(r => r.json())
+      .then(data => { setUsers(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  };
+
+  useEffect(() => { fetchUsers(); }, []);
+
+  const handleDelete = async (username: string) => {
+    if (!window.confirm(`Are you sure you want to delete user ${username}? This may remove their access and associated records.`)) return;
+    try {
+      const res = await fetch(`/api/admin/users/${username}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        fetchUsers();
+      } else {
+        alert(data.message || 'Failed to delete user');
+      }
+    } catch {
+      alert('Connection error');
+    }
+  };
+
+  const filtered = users.filter(u => {
+    const matchesSearch = u.username.toLowerCase().includes(search.toLowerCase()) || 
+      (u.name && u.name.toLowerCase().includes(search.toLowerCase())) ||
+      (u.email && u.email.toLowerCase().includes(search.toLowerCase()));
+    const matchesRole = roleFilter ? u.role === roleFilter : true;
+    return matchesSearch && matchesRole;
+  });
+
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, roleFilter]);
+
+  const availableRoles = Array.from(new Set(users.map(u => u.role))).filter(Boolean).sort();
+
+  return (
+    <div className="bg-slate-900/80 backdrop-blur-xl p-6 rounded-2xl border border-slate-800 shadow-xl">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+        <h3 className="text-lg font-semibold text-white flex items-center">
+          <Users className="w-5 h-5 mr-2 text-cyan-400" />
+          Registered Users
+        </h3>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 w-4 h-4" />
+          <input
+            type="text"
+            placeholder="Search users..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="pl-9 pr-4 py-2 rounded-xl bg-slate-950 border border-slate-800 text-white text-sm focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 transition-all w-full sm:w-64"
+          />
+        </div>
+      </div>
+
+      {/* Role / Department Filter */}
+      {!loading && availableRoles.length > 0 && (
+        <div className="flex items-center space-x-2 overflow-x-auto pb-4 mb-2 hide-scrollbar">
+          <span className="text-sm text-slate-500 font-medium whitespace-nowrap">Department:</span>
+          <button onClick={() => setRoleFilter('')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border whitespace-nowrap ${!roleFilter ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-600'}`}>
+            All
+          </button>
+          {availableRoles.map(role => (
+            <button key={role as string} onClick={() => setRoleFilter(role as string)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border whitespace-nowrap ${roleFilter === role ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-600'}`}>
+              {(role as string).replace(/_/g, ' ')}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="py-12 flex justify-center items-center text-slate-400">
+          <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading users...
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="py-12 text-center text-slate-400 bg-slate-950 rounded-xl border border-slate-800">
+          No users found.
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-slate-800">
+          <table className="w-full text-left text-sm whitespace-nowrap">
+            <thead className="bg-slate-950 text-slate-400 border-b border-slate-800">
+              <tr>
+                <th className="px-4 py-3 font-medium">Username</th>
+                <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Email</th>
+                <th className="px-4 py-3 font-medium">Role</th>
+                <th className="px-4 py-3 font-medium text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {paginated.map(u => (
+                <tr key={u.username} className="bg-white hover:bg-slate-50 transition-colors text-slate-900">
+                  <td className="px-4 py-3 text-cyan-700 font-mono text-xs">{u.username}</td>
+                  <td className="px-4 py-3 font-medium">{u.name || '—'}</td>
+                  <td className="px-4 py-3">{u.email || '—'}</td>
+                  <td className="px-4 py-3">
+                    <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded-lg text-xs font-medium border border-slate-200">
+                      {u.role}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {u.username !== 'Admin' && (
+                      <button
+                        onClick={() => handleDelete(u.username)}
+                        className="p-1.5 bg-red-50 text-red-500 hover:bg-red-100 rounded-lg transition-colors border border-red-200"
+                        title="Delete User"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Pagination Controls */}
+      {!loading && totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <span className="text-xs text-slate-500">
+            Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filtered.length)} of {filtered.length} entries
+          </span>
+          <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium border bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-600 disabled:opacity-50 transition-colors"
+            >
+              Previous
+            </button>
+            <span className="text-xs text-slate-400 font-medium">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium border bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-600 disabled:opacity-50 transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1237,7 +1671,7 @@ function getActionDot(action: string): { dot: string; label: string; textColor: 
     return { dot: 'bg-amber-400', label: action.replace(/_/g, ' ').toLowerCase(), textColor: 'text-amber-400' };
   if (a.includes('STUDENT') || a.includes('RECORD') || a.includes('EXAM'))
     return { dot: 'bg-rose-400', label: action.replace(/_/g, ' ').toLowerCase(), textColor: 'text-rose-400' };
-  return { dot: 'bg-slate-500', label: action.replace(/_/g, ' ').toLowerCase(), textColor: 'text-slate-400' };
+  return { dot: 'bg-indigo-400', label: action.replace(/_/g, ' ').toLowerCase(), textColor: 'text-indigo-300' };
 }
 
 // ── Compact detail parser ──────────────────────────────────────────────────
@@ -1260,8 +1694,7 @@ function compactDetail(details: string): string {
   // "Changed from X to Y"
   const changed = details.match(/changed from (.+) to (.+)/i);
   if (changed) return `${changed[1]} → ${changed[2]}`;
-  // Generic: truncate to ~60 chars
-  return details.length > 65 ? details.slice(0, 62) + '…' : details;
+  return details;
 }
 
 // ── Date-key helpers ───────────────────────────────────────────────────────
@@ -1412,7 +1845,7 @@ function AdminLogsTab() {
         <div className="rounded-2xl border border-slate-800/60 bg-slate-900/30 backdrop-blur-xl overflow-hidden">
 
           {/* Column headers */}
-          <div className="grid grid-cols-[72px_100px_1fr] gap-0 border-b border-slate-800/60 bg-slate-950/60 px-4 py-2">
+          <div className="hidden sm:grid grid-cols-[72px_100px_1fr] gap-0 border-b border-slate-800/60 bg-slate-950/60 px-4 py-2">
             <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Time</span>
             <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Actor</span>
             <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Action · Details</span>
@@ -1437,42 +1870,42 @@ function AdminLogsTab() {
                 return (
                   <div
                     key={log.log_id ?? idx}
-                    className="grid grid-cols-[72px_100px_1fr] gap-0 px-4 py-1.5 border-b border-slate-800/30 hover:bg-slate-800/20 transition-colors group items-center"
+                    className="flex flex-col sm:grid sm:grid-cols-[72px_100px_1fr] gap-2 sm:gap-0 px-4 py-3 sm:py-2 border-b border-slate-800/30 hover:bg-slate-800/20 transition-colors group sm:items-start"
                   >
                     {/* Time */}
-                    <div className="flex flex-col min-w-0">
+                    <div className="flex sm:flex-col items-center sm:items-start justify-between sm:justify-start min-w-0">
                       <span className="text-[11px] font-mono text-slate-300 leading-none">
                         {timeOnly(log.timestamp)}
                       </span>
-                      <span className="text-[10px] font-mono text-slate-600 mt-0.5">{ago}</span>
+                      <span className="text-[10px] font-mono text-slate-500 mt-0 sm:mt-0.5">{ago}</span>
                     </div>
 
                     {/* Actor */}
-                    <div className="min-w-0 pr-2">
-                      <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-slate-800/70 border border-slate-700/50 text-[11px] font-mono text-cyan-400/80 max-w-[90px]">
+                    <div className="min-w-0 sm:pr-2">
+                      <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded bg-slate-800/70 border border-slate-700/50 text-[11px] font-mono text-cyan-400/80 w-max sm:max-w-[90px]">
                         <span className="truncate">{log.user_id || '—'}</span>
                       </span>
                     </div>
 
                     {/* Action + detail inline */}
-                    <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
-                      {/* Colour dot */}
-                      <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${meta.dot}`} />
-                      {/* Action label */}
-                      <span className={`text-[12px] font-semibold whitespace-nowrap ${meta.textColor}`}>
-                        {meta.label}
-                      </span>
-                      {/* Separator + compact detail */}
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:gap-1.5 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5 sm:mt-0 mb-1 sm:mb-0">
+                        {/* Colour dot */}
+                        <span className={`flex-shrink-0 w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+                        {/* Action label */}
+                        <span className={`text-[12px] font-semibold whitespace-nowrap ${meta.textColor}`}>
+                          {meta.label}
+                        </span>
+                      </div>
+                      
+                      {/* Separator + full detail */}
                       {compact && (
-                        <>
-                          <span className="text-slate-700 text-[11px] flex-shrink-0">·</span>
-                          <span
-                            className="text-[11px] text-slate-400 truncate group-hover:text-slate-200 transition-colors"
-                            title={log.details}
-                          >
+                        <div className="flex items-start sm:items-start gap-1.5 min-w-0 text-left">
+                          <span className="text-slate-700 text-[11px] flex-shrink-0 hidden sm:inline mt-[1px]">·</span>
+                          <span className="text-[11px] text-slate-300 group-hover:text-slate-100 transition-colors break-words">
                             {compact}
                           </span>
-                        </>
+                        </div>
                       )}
                     </div>
                   </div>

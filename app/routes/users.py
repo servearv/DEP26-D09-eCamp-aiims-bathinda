@@ -6,7 +6,8 @@ import psycopg2.extras
 
 from app.db import get_db_conn
 from app.config import Config
-from app.helpers import row_to_dict, rows_to_list, generate_username, generate_password, user_public
+from app.helpers import (hash_password, login_required, row_to_dict, rows_to_list,
+                         generate_username, generate_password, user_public)
 from app.services.audit import log_audit
 from app.services.email import send_email_async
 
@@ -119,7 +120,7 @@ def api_change_password_otp():
 
         cur.execute(
             "UPDATE Users SET password = %s, otp_code = NULL, otp_expires = NULL WHERE username = %s",
-            (new_password, sess_user['username']),
+            (hash_password(new_password), sess_user['username']),
         )
         conn.commit()
 
@@ -149,7 +150,10 @@ def api_register_user():
     role = data.get("role", "Other")
     designation = data.get("designation", "").strip()
     specialization = data.get("specialization", "").strip()
-    admin_user = data.get("admin_user", "admin")
+    sess_user = session.get("user")
+    if not sess_user or sess_user.get("role") != "Admin":
+        return jsonify({"success": False, "message": "Admin access required"}), 403
+    admin_user = sess_user["username"]
 
     if not email or not name:
         return jsonify({
@@ -194,7 +198,7 @@ def api_register_user():
         cur.execute(
             "INSERT INTO Users (username, password, email, role, name, designation, specialization) "
             "VALUES (%s,%s,%s,%s,%s,%s,%s)",
-            (username, temp_password, email, role, name, designation, specialization),
+            (username, hash_password(temp_password), email, role, name, designation, specialization),
         )
 
         # If School POC, auto-create a School record linked to this user
@@ -259,7 +263,6 @@ def api_register_user():
     result = {
         "success": True,
         "username": username,
-        "password": temp_password,
         "email": email,
         "email_sent": True,  # async, so we assume success
     }

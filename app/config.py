@@ -1,7 +1,7 @@
 import os
 
 class Config:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "aiims-bathinda-secret-dev")
+    SECRET_KEY = os.environ["SECRET_KEY"]
     DATABASE_URL = os.environ.get("DATABASE_URL")
     
     # Session
@@ -19,6 +19,6 @@ class Config:
     # App specific
     SPECIALIST_ROLES = [
         'Community_Medicine', 'Dental', 'ENT',
-        'Eye_Specialist', 'Skin_Specialist', 'Other'
+        'Eye_Specialist', 'Skin_Specialist', 'Pediatrics', 'OBGYN', 'Other'
     ]
     ALL_ROLES = ['Admin', 'School POC'] + SPECIALIST_ROLES

@@ -6,6 +6,24 @@ import {
   Users, CheckCircle, Loader2, ClipboardList, Printer, Trash2, PlusCircle, FileText, RefreshCw, History
 } from 'lucide-react';
 import GeneralInfoForm, { GeneralInfoSummary } from './GeneralInfoForm';
+import { ComplaintSelector } from './components/complaints/ComplaintSelector';
+import { DentitionDiagram } from './components/complaints/DentitionDiagram';
+import { LateralitySelector } from './components/complaints/LateralitySelector';
+import { OtherComplaintInput } from './components/complaints/OtherComplaintInput';
+import {
+  DENTAL_COMPLAINTS,
+  ENT_EAR_COMPLAINTS,
+  ENT_NOSE_COMPLAINTS,
+  ENT_THROAT_COMPLAINTS,
+  OPHTHALMOLOGY_COMPLAINTS,
+  DERMATOLOGY_COMPLAINTS,
+  PEDIATRIC_COMPLAINTS,
+  OBGYN_COMPLAINTS,
+} from './components/complaints/ComplaintTypes';
+import type { ChiefComplaint } from './components/complaints/ComplaintTypes';
+import { bpWarning, pulseWarning, formatBP } from './lib/vitals';
+import { SPECIALTIES, getSpecialty, specialtyAppliesTo, SpecialtyIcon } from './constants/specialties';
+import { printSlips, openPrintWindow } from './lib/printSlip';
 
 // Socket.IO client (optional)
 let io: any = null;
@@ -27,13 +45,7 @@ const BLOOD_GROUPS = ['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const CLASSES = ['', 'Nursery', 'LKG', 'UKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 const SECTIONS = ['', 'A', 'B', 'C', 'D', 'E'];
 
-const DOMAIN_TAGS = [
-  { key: 'Community_Medicine', short: 'CM', color: 'bg-rose-500' },
-  { key: 'Dental', short: 'Dental', color: 'bg-sky-500' },
-  { key: 'ENT', short: 'ENT', color: 'bg-amber-500' },
-  { key: 'Eye_Specialist', short: 'Ophthal', color: 'bg-emerald-500' },
-  { key: 'Skin_Specialist', short: 'Derm', color: 'bg-violet-500' },
-];
+const DOMAIN_TAGS = SPECIALTIES.map(s => ({ key: s.key, short: s.short, color: s.tagColor }));
 
 const SYMPTOM_CHECKLIST = [
   'Child rubs eyes frequently',
@@ -186,11 +198,11 @@ function SectionCard({ title, icon, children, defaultOpen = true }: {
   );
 }
 
-function DomainProgressBar({ examinedCategories }: { examinedCategories?: string }) {
+function DomainProgressBar({ examinedCategories, gender }: { examinedCategories?: string; gender?: string }) {
   const done = new Set((examinedCategories || '').split(',').filter(Boolean));
   return (
     <div className="flex flex-wrap items-center gap-1">
-      {DOMAIN_TAGS.map(d => {
+      {DOMAIN_TAGS.filter(d => specialtyAppliesTo(d.key, gender)).map(d => {
         const isDone = done.has(d.key) || done.has('FullExam');
         return (
           <span
@@ -491,26 +503,116 @@ function ActiveCampsDirectory({ user, onVolunteer }: { user: User; onVolunteer: 
 // --- Ophthalmology Form ---
 function EyeExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
   const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  
+  // Initialize ophthalmology complaints data structure
+  const eyeComplaints = data.eyeComplaints || { complaints: [], otherComplaint: '' };
+  
+  const updateEyeComplaints = (field: string, value: any) => {
+    u('eyeComplaints', { ...eyeComplaints, [field]: value });
+  };
+  
+  // Handle eye complaint selection with laterality
+  const toggleEyeComplaint = (complaint: string) => {
+    const complaints: ChiefComplaint[] = eyeComplaints.complaints || [];
+    const existing = complaints.find((c: ChiefComplaint) => c.complaint === complaint);
+    
+    if (existing) {
+      // Remove if exists
+      const updated = complaints.filter((c: ChiefComplaint) => c.complaint !== complaint);
+      updateEyeComplaints('complaints', updated);
+    } else {
+      // Add with default laterality
+      const updated = [...complaints, { complaint, side: 'both' as const }];
+      updateEyeComplaints('complaints', updated);
+    }
+  };
+  
+  const updateEyeComplaintSide = (complaint: string, side: 'left' | 'right' | 'both') => {
+    const complaints: ChiefComplaint[] = eyeComplaints.complaints || [];
+    const updated = complaints.map((c: ChiefComplaint) =>
+      c.complaint === complaint ? { ...c, side } : c
+    );
+    updateEyeComplaints('complaints', updated);
+  };
+  
+  const selectedEyeComplaints = (eyeComplaints.complaints || []).map((c: ChiefComplaint) => c.complaint);
+  
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <SectionHeading title="Ophthalmology Examination" icon={<Eye className="w-4 h-4" />} />
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <FormSelect label="Vision - Right Eye" value={data.rightEye || '6/6'} onChange={v => u('rightEye', v)}
-          options={['6/6', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60', 'Other']} id="eye-r" disabled={disabled} />
-        <FormSelect label="Vision - Left Eye" value={data.leftEye || '6/6'} onChange={v => u('leftEye', v)}
-          options={['6/6', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60', 'Other']} id="eye-l" disabled={disabled} />
-        <div>
-          <label className={cls.label}>Spectacles / Lenses</label>
-          <div className="flex space-x-2">
-            {['Yes', 'No'].map(o => (
-              <button key={o} type="button" onClick={() => !disabled && u('accessories', o)} disabled={disabled}
-                className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.accessories === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>
-                {o}
-              </button>
-            ))}
+      
+      {/* Chief Complaints Section */}
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <ClipboardList className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Chief Complaints</h3>
+        </div>
+        
+        <ComplaintSelector
+          title="Select eye complaints"
+          complaints={OPHTHALMOLOGY_COMPLAINTS}
+          selected={selectedEyeComplaints}
+          onChange={(selected) => {
+            // Handle additions and removals
+            const current = selectedEyeComplaints;
+            const added = selected.filter(s => !current.includes(s));
+            const removed = current.filter(c => !selected.includes(c));
+            
+            added.forEach(c => toggleEyeComplaint(c));
+            removed.forEach(c => toggleEyeComplaint(c));
+          }}
+          disabled={disabled}
+        />
+        
+        {/* Laterality selection for each selected eye complaint (except Spectacles which is general) */}
+        {(eyeComplaints.complaints || [])
+          .filter((c: ChiefComplaint) => c.complaint !== 'Spectacles')
+          .map((c: ChiefComplaint) => (
+            <LateralitySelector
+              key={c.complaint}
+              complaint={c.complaint}
+              value={c.side}
+              onChange={(side) => updateEyeComplaintSide(c.complaint, side)}
+              disabled={disabled}
+              label={`Which eye for "${c.complaint}"?`}
+            />
+          ))}
+        
+        <OtherComplaintInput
+          value={eyeComplaints.otherComplaint || ''}
+          onChange={(value) => updateEyeComplaints('otherComplaint', value)}
+          disabled={disabled}
+          label="Other Eye Complaints"
+          placeholder="Describe any other eye complaints not listed above..."
+        />
+      </div>
+      
+      {/* Vision Assessment */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Eye className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Vision Assessment</h3>
+        </div>
+        
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          <FormSelect label="Vision - Right Eye" value={data.rightEye || '6/6'} onChange={v => u('rightEye', v)}
+            options={['6/6', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60', 'Other']} id="eye-r" disabled={disabled} />
+          <FormSelect label="Vision - Left Eye" value={data.leftEye || '6/6'} onChange={v => u('leftEye', v)}
+            options={['6/6', '6/9', '6/12', '6/18', '6/24', '6/36', '6/60', 'Other']} id="eye-l" disabled={disabled} />
+          <div>
+            <label className={cls.label}>Spectacles / Lenses</label>
+            <div className="flex space-x-2">
+              {['Yes', 'No'].map(o => (
+                <button key={o} type="button" onClick={() => !disabled && u('accessories', o)} disabled={disabled}
+                  className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.accessories === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>
+                  {o}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </div>
+      
       <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
     </div>
   );
@@ -519,45 +621,109 @@ function EyeExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campNa
 // --- Dental Form ---
 function DentalExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
   const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  
+  // Initialize dental complaints data structure
+  const dentalComplaints = data.dentalComplaints || { complaints: [], affectedTeeth: [], otherComplaint: '' };
+  
+  const updateDentalComplaints = (field: string, value: any) => {
+    u('dentalComplaints', { ...dentalComplaints, [field]: value });
+  };
+  
+  const toggleTooth = (toothNumber: number) => {
+    const teeth = dentalComplaints.affectedTeeth || [];
+    const newTeeth = teeth.includes(toothNumber)
+      ? teeth.filter((t: number) => t !== toothNumber)
+      : [...teeth, toothNumber];
+    updateDentalComplaints('affectedTeeth', newTeeth);
+  };
+  
   return (
     <div className="space-y-6">
       <SectionHeading title="Dental Examination" icon={<span className="text-base">🦷</span>} />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-2">
-          <label htmlFor="dental-exam" className={cls.label}>
-            Teeth &amp; gums examination
-          </label>
-          <textarea
-            id="dental-exam"
-            value={data.teethGums || ''}
-            onChange={e => u('teethGums', e.target.value)}
-            disabled={disabled}
-            rows={6}
-            placeholder='e.g. "Caries CBA ABE"'
-            className={`${cls.textarea} min-h-[160px] disabled:opacity-50`}
-          />
+      
+      {/* Chief Complaints Section */}
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <ClipboardList className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Chief Complaints</h3>
         </div>
-        <div className="flex flex-col gap-6">
-          <div>
-            <label className={cls.label}>Dental implants</label>
-            <div className="flex gap-2">
-              {['Yes', 'No'].map(o => (
-                <button key={o} type="button" onClick={() => !disabled && u('implants', o)} disabled={disabled}
-                  className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.implants === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>{o}</button>
-              ))}
-            </div>
+        
+        <ComplaintSelector
+          title="Select presenting complaints"
+          complaints={DENTAL_COMPLAINTS}
+          selected={dentalComplaints.complaints || []}
+          onChange={(selected) => updateDentalComplaints('complaints', selected)}
+          disabled={disabled}
+        />
+        
+        <OtherComplaintInput
+          value={dentalComplaints.otherComplaint || ''}
+          onChange={(value) => updateDentalComplaints('otherComplaint', value)}
+          disabled={disabled}
+          label="Other Dental Complaints"
+          placeholder="Describe any other dental complaints not listed above..."
+        />
+      </div>
+      
+      {/* Dentition Diagram */}
+      <div className="space-y-3 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <span className="text-xl">🦷</span>
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Affected Teeth</h3>
+        </div>
+        <p className="text-sm text-[#6B7280]">Click on teeth to mark them as affected</p>
+        <DentitionDiagram
+          selectedTeeth={dentalComplaints.affectedTeeth || []}
+          onToothSelect={toggleTooth}
+          disabled={disabled}
+        />
+      </div>
+      
+      {/* Detailed Examination */}
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Scan className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Detailed Examination</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <label htmlFor="dental-exam" className={cls.label}>
+              Teeth &amp; gums examination findings
+            </label>
+            <textarea
+              id="dental-exam"
+              value={data.teethGums || ''}
+              onChange={e => u('teethGums', e.target.value)}
+              disabled={disabled}
+              rows={6}
+              placeholder='e.g. "Caries CBA ABE, Gingivitis present"'
+              className={`${cls.textarea} min-h-[160px] disabled:opacity-50`}
+            />
           </div>
-          <div>
-            <label className={cls.label}>Braces</label>
-            <div className="flex gap-2">
-              {['Yes', 'No'].map(o => (
-                <button key={o} type="button" onClick={() => !disabled && u('braces', o)} disabled={disabled}
-                  className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.braces === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>{o}</button>
-              ))}
+          <div className="flex flex-col gap-6">
+            <div>
+              <label className={cls.label}>Dental implants</label>
+              <div className="flex gap-2">
+                {['Yes', 'No'].map(o => (
+                  <button key={o} type="button" onClick={() => !disabled && u('implants', o)} disabled={disabled}
+                    className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.implants === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>{o}</button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className={cls.label}>Braces</label>
+              <div className="flex gap-2">
+                {['Yes', 'No'].map(o => (
+                  <button key={o} type="button" onClick={() => !disabled && u('braces', o)} disabled={disabled}
+                    className={`min-h-[44px] flex-1 rounded-lg border text-sm font-semibold transition-all ${data.braces === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>{o}</button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       </div>
+      
       <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
     </div>
   );
@@ -566,14 +732,156 @@ function DentalExamForm({ data, onChange, disabled, doctorInfo, studentInfo, cam
 // --- ENT Form ---
 function ENTExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
   const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  
+  // Initialize ENT complaints data structure
+  const entComplaints = data.entComplaints || {
+    ear: { complaints: [], otherComplaint: '' },
+    nose: { complaints: [], otherComplaint: '' },
+    throat: { complaints: [], otherComplaint: '' },
+  };
+  
+  const updateENTComplaints = (section: string, field: string, value: any) => {
+    u('entComplaints', {
+      ...entComplaints,
+      [section]: { ...entComplaints[section], [field]: value }
+    });
+  };
+  
+  // Handle ear complaint selection with laterality
+  const toggleEarComplaint = (complaint: string) => {
+    const complaints: ChiefComplaint[] = entComplaints.ear.complaints || [];
+    const existing = complaints.find((c: ChiefComplaint) => c.complaint === complaint);
+    
+    if (existing) {
+      // Remove if exists
+      const updated = complaints.filter((c: ChiefComplaint) => c.complaint !== complaint);
+      updateENTComplaints('ear', 'complaints', updated);
+    } else {
+      // Add with default laterality
+      const updated = [...complaints, { complaint, side: 'both' as const }];
+      updateENTComplaints('ear', 'complaints', updated);
+    }
+  };
+  
+  const updateEarComplaintSide = (complaint: string, side: 'left' | 'right' | 'both') => {
+    const complaints: ChiefComplaint[] = entComplaints.ear.complaints || [];
+    const updated = complaints.map((c: ChiefComplaint) =>
+      c.complaint === complaint ? { ...c, side } : c
+    );
+    updateENTComplaints('ear', 'complaints', updated);
+  };
+  
+  const selectedEarComplaints = (entComplaints.ear.complaints || []).map((c: ChiefComplaint) => c.complaint);
+  
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <SectionHeading title="ENT Examination" icon={<Ear className="w-4 h-4" />} />
-      <div className="grid grid-cols-3 gap-4">
-        <FormInput label="Ear Examination" value={data.ear || ''} onChange={v => u('ear', v)} id="ent-ear" placeholder='e.g. "B/L EAC Wax"' disabled={disabled} />
-        <FormInput label="Nose Examination" value={data.nose || ''} onChange={v => u('nose', v)} id="ent-nose" placeholder="NAD or specify" disabled={disabled} />
-        <FormInput label="Throat Examination" value={data.throat || ''} onChange={v => u('throat', v)} id="ent-throat" placeholder="NAD or specify" disabled={disabled} />
+      
+      {/* EAR Section */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <span className="text-xl">👂</span>
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Ear Examination</h3>
+        </div>
+        
+        <ComplaintSelector
+          title="Select ear complaints"
+          complaints={ENT_EAR_COMPLAINTS}
+          selected={selectedEarComplaints}
+          onChange={(selected) => {
+            // Handle additions and removals
+            const current = selectedEarComplaints;
+            const added = selected.filter(s => !current.includes(s));
+            const removed = current.filter(c => !selected.includes(c));
+            
+            added.forEach(c => toggleEarComplaint(c));
+            removed.forEach(c => toggleEarComplaint(c));
+          }}
+          disabled={disabled}
+        />
+        
+        {/* Laterality selection for each selected ear complaint */}
+        {(entComplaints.ear.complaints || []).map((c: ChiefComplaint) => (
+          <LateralitySelector
+            key={c.complaint}
+            complaint={c.complaint}
+            value={c.side}
+            onChange={(side) => updateEarComplaintSide(c.complaint, side)}
+            disabled={disabled}
+          />
+        ))}
+        
+        <OtherComplaintInput
+          value={entComplaints.ear.otherComplaint || ''}
+          onChange={(value) => updateENTComplaints('ear', 'otherComplaint', value)}
+          disabled={disabled}
+          label="Other Ear Complaints"
+          placeholder="Describe any other ear complaints..."
+        />
       </div>
+      
+      {/* NOSE Section */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <span className="text-xl">👃</span>
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Nose Examination</h3>
+        </div>
+        
+        <ComplaintSelector
+          title="Select nose complaints"
+          complaints={ENT_NOSE_COMPLAINTS}
+          selected={entComplaints.nose.complaints || []}
+          onChange={(selected) => updateENTComplaints('nose', 'complaints', selected)}
+          disabled={disabled}
+        />
+        
+        <OtherComplaintInput
+          value={entComplaints.nose.otherComplaint || ''}
+          onChange={(value) => updateENTComplaints('nose', 'otherComplaint', value)}
+          disabled={disabled}
+          label="Other Nose Complaints"
+          placeholder="Describe any other nose complaints..."
+        />
+      </div>
+      
+      {/* THROAT Section */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <span className="text-xl">🗣️</span>
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Throat Examination</h3>
+        </div>
+        
+        <ComplaintSelector
+          title="Select throat complaints"
+          complaints={ENT_THROAT_COMPLAINTS}
+          selected={entComplaints.throat.complaints || []}
+          onChange={(selected) => updateENTComplaints('throat', 'complaints', selected)}
+          disabled={disabled}
+        />
+        
+        <OtherComplaintInput
+          value={entComplaints.throat.otherComplaint || ''}
+          onChange={(value) => updateENTComplaints('throat', 'otherComplaint', value)}
+          disabled={disabled}
+          label="Other Throat Complaints"
+          placeholder="Describe any other throat complaints..."
+        />
+      </div>
+      
+      {/* Detailed Examination Notes */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Scan className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Detailed Examination Notes</h3>
+        </div>
+        
+        <div className="grid grid-cols-3 gap-4">
+          <FormInput label="Ear Findings" value={data.ear || ''} onChange={v => u('ear', v)} id="ent-ear" placeholder='e.g. "B/L EAC Wax"' disabled={disabled} />
+          <FormInput label="Nose Findings" value={data.nose || ''} onChange={v => u('nose', v)} id="ent-nose" placeholder="NAD or specify" disabled={disabled} />
+          <FormInput label="Throat Findings" value={data.throat || ''} onChange={v => u('throat', v)} id="ent-throat" placeholder="NAD or specify" disabled={disabled} />
+        </div>
+      </div>
+      
       <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
     </div>
   );
@@ -582,14 +890,261 @@ function ENTExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campNa
 // --- Skin Form ---
 function SkinExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
   const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  
+  // Initialize dermatology complaints data structure
+  const skinComplaints = data.skinComplaints || { complaints: [], otherComplaint: '' };
+  
+  const updateSkinComplaints = (field: string, value: any) => {
+    u('skinComplaints', { ...skinComplaints, [field]: value });
+  };
+  
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       <SectionHeading title="Dermatology Examination" icon={<Scan className="w-4 h-4" />} />
-      <div className="grid grid-cols-1 gap-4">
-        <FormInput label="Skin, Nails & Hair Examination" value={data.skinExam || ''} onChange={v => u('skinExam', v)}
-          id="skin-exam" placeholder='e.g. "Seborrheic dermatitis / crusting on scalp"' disabled={disabled} />
+      
+      {/* Chief Complaints Section */}
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <ClipboardList className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Chief Complaints</h3>
+        </div>
+        
+        <ComplaintSelector
+          title="Select dermatological complaints"
+          complaints={DERMATOLOGY_COMPLAINTS}
+          selected={skinComplaints.complaints || []}
+          onChange={(selected) => updateSkinComplaints('complaints', selected)}
+          disabled={disabled}
+        />
+        
+        <OtherComplaintInput
+          value={skinComplaints.otherComplaint || ''}
+          onChange={(value) => updateSkinComplaints('otherComplaint', value)}
+          disabled={disabled}
+          label="Other Skin/Hair/Nail Complaints"
+          placeholder="Describe any other dermatological complaints not listed above..."
+        />
       </div>
+      
+      {/* Detailed Examination */}
+      <div className="space-y-4 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Scan className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Detailed Examination</h3>
+        </div>
+        
+        <div className="grid grid-cols-1 gap-4">
+          <FormInput label="Skin, Nails & Hair Examination Findings" value={data.skinExam || ''} onChange={v => u('skinExam', v)}
+            id="skin-exam" placeholder='e.g. "Seborrheic dermatitis / crusting on scalp"' disabled={disabled} />
+        </div>
+      </div>
+      
       <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
+    </div>
+  );
+}
+
+// --- Small selection helpers used by the Paediatrics / OBGYN forms ---
+function ChoiceRow({ label, options, value, onSelect, disabled }: {
+  label: string; options: string[]; value?: string; onSelect: (v: string) => void; disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className={cls.label}>{label}</label>
+      <div className="flex flex-wrap gap-2">
+        {options.map(o => (
+          <button key={o} type="button" disabled={disabled} onClick={() => !disabled && onSelect(value === o ? '' : o)}
+            className={`min-h-[40px] rounded-lg border px-3 py-2 text-sm font-semibold transition-all disabled:opacity-50 ${value === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'}`}>
+            {o}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChipList({ label, options, value, onChange, disabled }: {
+  label: string; options: string[]; value?: string[]; onChange: (v: string[]) => void; disabled?: boolean;
+}) {
+  const sel = Array.isArray(value) ? value : [];
+  return (
+    <div>
+      <label className={cls.label}>{label}</label>
+      <div className="flex flex-wrap gap-2">
+        {options.map(o => {
+          const active = sel.includes(o);
+          return (
+            <button key={o} type="button" disabled={disabled}
+              onClick={() => !disabled && onChange(active ? sel.filter(x => x !== o) : [...sel, o])}
+              className={`min-h-[40px] rounded-lg border px-3 py-2 text-sm font-medium transition-all disabled:opacity-50 ${active ? 'border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'}`}>
+              {active && <Check className="w-3 h-3 inline mr-1" />}{o}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SystemsExam({ data, onChange, disabled }: { data: any; onChange: (d: any) => void; disabled?: boolean }) {
+  const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  const SYSTEMS = [
+    { key: 'respiratory', label: 'Respiratory System' },
+    { key: 'cardiovascular', label: 'Cardiovascular System' },
+    { key: 'abdomen', label: 'Abdomen' },
+    { key: 'cns', label: 'Central Nervous System' },
+  ];
+  return (
+    <div className="space-y-3">
+      {SYSTEMS.map(sys => (
+        <div key={sys.key}>
+          <label className={cls.label}>{sys.label}</label>
+          <div className="flex space-x-2">
+            {['NAD', 'Abnormal'].map(o => (
+              <button key={o} type="button" onClick={() => !disabled && u(sys.key, data[sys.key] === o ? '' : o)} disabled={disabled}
+                className={`min-h-[40px] rounded-lg border px-4 py-2 text-sm font-semibold transition-all ${data[sys.key] === o ? (o === 'NAD' ? 'border-[#BBF7D0] bg-[#F0FDF4] text-[#166534]' : 'border-[#FECACA] bg-[#FEF2F2] text-[#B91C1C]') : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>{o}</button>
+            ))}
+            {data[sys.key] === 'Abnormal' && (
+              <input value={data[`${sys.key}Detail`] || ''} onChange={e => u(`${sys.key}Detail`, e.target.value)} disabled={disabled}
+                placeholder="Specify..." className={`flex-1 ${cls.input}`} />
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ComplaintsBlock({ field, title, complaints, data, onChange, disabled }: {
+  field: string; title: string; complaints: readonly string[]; data: any; onChange: (d: any) => void; disabled?: boolean;
+}) {
+  const block = data[field] || { complaints: [], otherComplaint: '' };
+  const upd = (k: string, v: any) => onChange({ ...data, [field]: { ...block, [k]: v } });
+  return (
+    <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+      <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+        <ClipboardList className="h-4 w-4 text-[#2563EB]" />
+        <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Chief Complaints</h3>
+      </div>
+      <ComplaintSelector title={title} complaints={complaints} selected={block.complaints || []}
+        onChange={sel => upd('complaints', sel)} disabled={disabled} />
+      <OtherComplaintInput value={block.otherComplaint || ''} onChange={v => upd('otherComplaint', v)} disabled={disabled}
+        label="Other Complaints" placeholder="Describe any other complaints not listed above..." />
+    </div>
+  );
+}
+
+// --- Paediatrics Form ---
+function PediatricsExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
+  const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  return (
+    <div className="space-y-6">
+      <SectionHeading title="Paediatric Examination" icon={<SpecialtyIcon specialty="Pediatrics" className="w-4 h-4" />} />
+
+      <ComplaintsBlock field="pedComplaints" title="Select presenting complaints" complaints={PEDIATRIC_COMPLAINTS}
+        data={data} onChange={onChange} disabled={disabled} />
+
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Activity className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Growth, Nutrition & Vitals</h3>
+        </div>
+        <p className="text-xs text-[#6B7280]">Height, weight and BMI entered by the school are shown in the general info above.</p>
+        <ChipList label="Growth & nutrition" options={['Normal growth', 'Underweight', 'Stunting', 'Wasting', 'Overweight', 'Obese']}
+          value={data.growthFlags} onChange={v => u('growthFlags', v)} disabled={disabled} />
+        <ChipList label="Signs of deficiency" options={['Pallor', "Bitot's spots", 'Angular stomatitis', 'Rickets', 'Goitre', 'Dental fluorosis', 'None']}
+          value={data.deficiencySigns} onChange={v => u('deficiencySigns', v)} disabled={disabled} />
+        <VitalsInputs data={data} onChange={onChange} disabled={disabled} />
+      </div>
+
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <HeartPulse className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Systemic Examination</h3>
+        </div>
+        <SystemsExam data={data} onChange={onChange} disabled={disabled} />
+        <FormInput label="Developmental / behavioural concerns" value={data.developmentalConcerns || ''} onChange={v => u('developmentalConcerns', v)}
+          id="ped-dev" placeholder='e.g. "Speech delay, attention difficulty" or leave blank' disabled={disabled} />
+        <ChoiceRow label="Immunisation status" options={['Up to date', 'Incomplete', 'Unknown']}
+          value={data.immunisation} onSelect={v => u('immunisation', v)} disabled={disabled} />
+      </div>
+
+      <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
+    </div>
+  );
+}
+
+// --- Obstetrics & Gynaecology Form (female students only) ---
+function OBGYNExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
+  const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  return (
+    <div className="space-y-6">
+      <SectionHeading title="Obstetrics & Gynaecology Examination" icon={<SpecialtyIcon specialty="OBGYN" className="w-4 h-4" />} />
+
+      <ComplaintsBlock field="obgComplaints" title="Select presenting complaints" complaints={OBGYN_COMPLAINTS}
+        data={data} onChange={onChange} disabled={disabled} />
+
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Calendar className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Menstrual History</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <ChoiceRow label="Menarche attained" options={['Yes', 'No']} value={data.menarche} onSelect={v => u('menarche', v)} disabled={disabled} />
+          {data.menarche === 'Yes' && (
+            <FormInput label="Age at menarche (years)" type="number" value={data.menarcheAge || ''} onChange={v => u('menarcheAge', v)} id="obg-menarche-age" placeholder="e.g. 12" disabled={disabled} />
+          )}
+        </div>
+        {data.menarche === 'Yes' && (
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <ChoiceRow label="Cycles" options={['Regular', 'Irregular']} value={data.cycleRegularity} onSelect={v => u('cycleRegularity', v)} disabled={disabled} />
+              <FormInput label="Cycle length (days)" type="number" value={data.cycleLength || ''} onChange={v => u('cycleLength', v)} id="obg-cycle" placeholder="e.g. 28" disabled={disabled} />
+              <FormInput label="Flow duration (days)" type="number" value={data.flowDays || ''} onChange={v => u('flowDays', v)} id="obg-flow" placeholder="e.g. 5" disabled={disabled} />
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <ChoiceRow label="Dysmenorrhoea" options={['Yes', 'No']} value={data.dysmenorrhoea} onSelect={v => u('dysmenorrhoea', v)} disabled={disabled} />
+              <ChoiceRow label="Heavy bleeding" options={['Yes', 'No']} value={data.heavyBleeding} onSelect={v => u('heavyBleeding', v)} disabled={disabled} />
+              <ChoiceRow label="Abnormal discharge" options={['Yes', 'No']} value={data.abnormalDischarge} onSelect={v => u('abnormalDischarge', v)} disabled={disabled} />
+            </div>
+            <ChoiceRow label="Menstrual hygiene practice" options={['Sanitary pad', 'Cloth', 'Menstrual cup', 'Other']}
+              value={data.hygienePractice} onSelect={v => u('hygienePractice', v)} disabled={disabled} />
+          </>
+        )}
+      </div>
+
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <HeartPulse className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">General Examination & Counselling</h3>
+        </div>
+        <ChoiceRow label="Signs of anaemia" options={['No', 'Pallor', 'Severe pallor']} value={data.anaemia} onSelect={v => u('anaemia', v)} disabled={disabled} />
+        <ChipList label="Counselling given" options={['Menstrual hygiene', 'Nutrition / iron intake', 'Personal hygiene', 'Other']}
+          value={data.counselling} onChange={v => u('counselling', v)} disabled={disabled} />
+      </div>
+
+      <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
+    </div>
+  );
+}
+
+// --- Shared vitals (BP / pulse) inputs ---
+function VitalsInputs({ data, onChange, disabled }: { data: any; onChange: (d: any) => void; disabled?: boolean }) {
+  const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  const bpWarn = bpWarning(data.bpSystolic || '', data.bpDiastolic || '');
+  const pWarn = pulseWarning(data.pulse || '');
+  return (
+    <div>
+      <div className="grid grid-cols-3 gap-4">
+        <FormInput label="BP Systolic (mmHg)" type="number" value={data.bpSystolic || ''} onChange={v => u('bpSystolic', v)} id="vit-bp-sys" placeholder="e.g. 110" disabled={disabled} />
+        <FormInput label="BP Diastolic (mmHg)" type="number" value={data.bpDiastolic || ''} onChange={v => u('bpDiastolic', v)} id="vit-bp-dia" placeholder="e.g. 70" disabled={disabled} />
+        <FormInput label="Pulse (/min)" type="number" value={data.pulse || ''} onChange={v => u('pulse', v)} id="vit-pulse" placeholder="e.g. 88" disabled={disabled} />
+      </div>
+      {(bpWarn || pWarn) && (
+        <p className="mt-1.5 flex items-center gap-1 text-xs text-[#B45309]">
+          <AlertTriangle className="h-3.5 w-3.5" />{bpWarn || pWarn}
+        </p>
+      )}
     </div>
   );
 }
@@ -665,13 +1220,14 @@ function CommunityMedForm({ data, onChange, disabled, doctorInfo, studentInfo, c
         </div>
       </div>
 
-      {/* Present Complaint & Medication */}
+      {/* General Physical Examination */}
       <div className="space-y-5 mt-6">
-        <SectionHeading title="Present Complaint & Medication" icon={<Stethoscope className="w-4 h-4" />} />
+        <SectionHeading title="General Physical Examination" icon={<Stethoscope className="w-4 h-4" />} />
         <div className="grid grid-cols-2 gap-4">
           <FormInput label="Present Complaint" value={data.presentComplaint || ''} onChange={v => u('presentComplaint', v)} id="cm-complaint" placeholder='e.g. "White crusting on scalp"' disabled={disabled} />
           <FormInput label="Current Medication" value={data.currentMedication || ''} onChange={v => u('currentMedication', v)} id="cm-med" placeholder='e.g. "Medicated shampoo"' disabled={disabled} />
         </div>
+        <VitalsInputs data={data} onChange={onChange} disabled={disabled} />
         <div>
           <label className={cls.label}>General Appearance: Anaemia</label>
           <div className="flex space-x-2">
@@ -718,94 +1274,6 @@ function CommunityMedForm({ data, onChange, disabled, doctorInfo, studentInfo, c
 // --- Shared Status + Prescription/Referral component ---
 const FREQUENCIES = ['OD', 'BD', 'TDS', 'QID', 'SOS', 'HS'];
 
-function PrintableDocument({ data, doctorInfo, studentInfo, campName }: { data: any; doctorInfo?: any; studentInfo?: any; campName?: string }) {
-  const isReferral = data.status === 'R';
-  const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const specialty = (doctorInfo?.role || '').replace(/_/g, ' ');
-  return (
-    <div className="printable-document" style={{ fontFamily: 'serif', color: '#000', background: '#fff', padding: '40px', maxWidth: '210mm', margin: '0 auto' }}>
-      <div style={{ textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '12px', marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>AIIMS BATHINDA — SCHOOL HEALTH CAMP</h1>
-        <p style={{ fontSize: '12px', margin: '4px 0 0', color: '#555' }}>{campName || ''}</p>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <div>
-          <span style={{ display: 'inline-block', padding: '4px 14px', border: '2px solid #000', fontWeight: 'bold', fontSize: '14px', textTransform: 'uppercase', borderRadius: '4px' }}>
-            {isReferral ? 'REFERRAL SHEET' : 'PRESCRIPTION'}
-          </span>
-          <span style={{ marginLeft: '12px', fontSize: '13px', color: '#555' }}>Department: {specialty}</span>
-        </div>
-        <div style={{ fontSize: '13px' }}>Date: {today}</div>
-      </div>
-      <table style={{ width: '100%', fontSize: '13px', marginBottom: '16px', borderCollapse: 'collapse' }}>
-        <tbody>
-          <tr><td style={{ padding: '3px 0', fontWeight: 'bold', width: '120px' }}>Student Name:</td><td>{studentInfo?.name || '—'}</td><td style={{ fontWeight: 'bold', width: '60px' }}>Age:</td><td style={{ width: '50px' }}>{studentInfo?.age || '—'}</td><td style={{ fontWeight: 'bold', width: '60px' }}>Sex:</td><td style={{ width: '50px' }}>{studentInfo?.gender === 'M' ? 'Male' : studentInfo?.gender === 'F' ? 'Female' : '—'}</td></tr>
-          <tr><td style={{ padding: '3px 0', fontWeight: 'bold' }}>Class:</td><td>{studentInfo?.student_class || '—'}{studentInfo?.section ? `-${studentInfo.section}` : ''}</td><td style={{ fontWeight: 'bold' }}>Father:</td><td colSpan={3}>{studentInfo?.father_name || '—'}</td></tr>
-          {studentInfo?.phone && <tr><td style={{ padding: '3px 0', fontWeight: 'bold' }}>Reg No:</td><td>{studentInfo?.registration_number || '—'}</td><td style={{ fontWeight: 'bold' }}>Contact:</td><td colSpan={3}>{studentInfo?.phone || '—'}</td></tr>}
-        </tbody>
-      </table>
-      <div style={{ borderTop: '1px solid #ccc', paddingTop: '12px', marginBottom: '12px' }}>
-        <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 6px' }}>Clinical Findings</h3>
-        <p style={{ fontSize: '13px', whiteSpace: 'pre-wrap' }}>{data.clinicalFindings || '—'}</p>
-      </div>
-      {!isReferral && (
-        <div style={{ borderTop: '1px solid #ccc', paddingTop: '12px', marginBottom: '12px' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 6px' }}>Diagnosis</h3>
-          <p style={{ fontSize: '13px' }}>{data.diagnosis || '—'}</p>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: '12px 0 6px' }}>Prescription (Rx)</h3>
-          {(data.medicines || []).length > 0 ? (
-            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ borderBottom: '1px solid #999' }}>
-                <th style={{ textAlign: 'left', padding: '4px', fontWeight: 'bold' }}>#</th>
-                <th style={{ textAlign: 'left', padding: '4px', fontWeight: 'bold' }}>Medicine</th>
-                <th style={{ textAlign: 'left', padding: '4px', fontWeight: 'bold' }}>Dosage</th>
-                <th style={{ textAlign: 'left', padding: '4px', fontWeight: 'bold' }}>Freq</th>
-                <th style={{ textAlign: 'left', padding: '4px', fontWeight: 'bold' }}>Duration</th>
-              </tr></thead>
-              <tbody>
-                {(data.medicines || []).map((m: any, i: number) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '4px' }}>{i + 1}.</td>
-                    <td style={{ padding: '4px' }}>{m.name || '—'}</td>
-                    <td style={{ padding: '4px' }}>{m.dosage || '—'}</td>
-                    <td style={{ padding: '4px' }}>{m.frequency || '—'}</td>
-                    <td style={{ padding: '4px' }}>{m.duration || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : <p style={{ fontSize: '13px', color: '#999' }}>No medicines prescribed.</p>}
-          {data.advice && (
-            <div style={{ marginTop: '12px' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 6px' }}>Advice</h3>
-              <p style={{ fontSize: '13px', whiteSpace: 'pre-wrap' }}>{data.advice}</p>
-            </div>
-          )}
-        </div>
-      )}
-      {isReferral && (
-        <div style={{ borderTop: '1px solid #ccc', paddingTop: '12px', marginBottom: '12px' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 6px' }}>Reason for Referral</h3>
-          <p style={{ fontSize: '13px', whiteSpace: 'pre-wrap' }}>{data.referralReason || '—'}</p>
-          <div style={{ display: 'flex', gap: '40px', marginTop: '10px' }}>
-            <div><span style={{ fontWeight: 'bold', fontSize: '13px' }}>Recommended Dept/Hospital: </span><span style={{ fontSize: '13px' }}>{data.referralDept || '—'}</span></div>
-            <div><span style={{ fontWeight: 'bold', fontSize: '13px' }}>Urgency: </span><span style={{ fontSize: '13px' }}>{data.urgency || 'Routine'}</span></div>
-          </div>
-        </div>
-      )}
-      <div style={{ borderTop: '2px solid #000', paddingTop: '16px', marginTop: '30px', display: 'flex', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: '13px' }}>
-          <p style={{ fontWeight: 'bold' }}>{doctorInfo?.name || doctorInfo?.username || '—'}</p>
-          <p style={{ color: '#555' }}>{specialty}</p>
-        </div>
-        <div style={{ textAlign: 'right', fontSize: '13px' }}>
-          <p style={{ marginTop: '30px', borderTop: '1px solid #000', paddingTop: '4px' }}>Signature</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, campName }: {
   data: any; onChange: (d: any) => void; disabled?: boolean;
   doctorInfo?: any; studentInfo?: any; campName?: string;
@@ -814,7 +1282,6 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
   const statusIsNormal = data.status === 'N';
   const isObservation = data.status === 'O';
   const isReferred = data.status === 'R';
-  const printRef = useRef<HTMLDivElement>(null);
 
   const addMedicine = () => {
     const meds = data.medicines || [];
@@ -831,17 +1298,31 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
     onChange({ ...data, medicines: meds });
   };
 
-  const handlePrint = () => {
-    const printContent = printRef.current;
-    if (!printContent) return;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-    printWindow.document.write(`<html><head><title>Print Document</title><style>body{margin:0;padding:0;font-family:serif;}@page{size:A4;margin:15mm;}</style></head><body>`);
-    printWindow.document.write(printContent.innerHTML);
-    printWindow.document.write('</body></html>');
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
+  // Prints this department's slip from the data on screen (works offline);
+  // height/weight/BMI are added when the server is reachable.
+  const handlePrint = async () => {
+    const win = openPrintWindow();
+    if (!win) return;
+    let generalInfo: any = null;
+    const sid = studentInfo?.student_id;
+    const eid = studentInfo?.event_id;
+    if (sid && eid && navigator.onLine) {
+      try {
+        const res = await fetch(`/api/students/${sid}/general-info?event_id=${eid}`);
+        if (res.ok) generalInfo = await res.json();
+      } catch { /* offline — print without vitals */ }
+    }
+    printSlips([{
+      student: studentInfo || {},
+      generalInfo,
+      record: {
+        category: doctorInfo?.role || '',
+        doctor_id: doctorInfo?.username,
+        doctor_name: doctorInfo?.name,
+        parsed_data: data,
+      },
+      campName,
+    }], win);
   };
 
   return (
@@ -868,8 +1349,8 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
         <p className="py-2 text-sm text-[#6B7280]">No prescription or referral for a normal assessment.</p>
       )}
 
-      {/* Observation — Prescription form */}
-      {isObservation && !disabled && (
+      {/* Observation or Referral — Prescription form (a referred child can still be prescribed) */}
+      {(isObservation || isReferred) && !disabled && (
         <div className="space-y-5 rounded-lg border border-[#FDE68A] bg-[#FFFBEB] p-6">
           <div className="flex items-center gap-2 border-b border-[#FDE68A] pb-3">
             <FileText className="h-4 w-4 text-[#B45309]" />
@@ -948,12 +1429,6 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
               rows={3} placeholder="Follow-up, precautions…"
               className={cls.textarea} />
           </div>
-          <div className="flex justify-end border-t border-[#FDE68A] pt-4">
-            <button type="button" onClick={handlePrint}
-              className="inline-flex items-center gap-2 rounded-lg border border-[#F59E0B] bg-white px-4 py-2.5 text-sm font-semibold text-[#B45309] transition-colors hover:bg-[#FFFBEB]">
-              <Printer className="h-4 w-4" /><span>Print prescription</span>
-            </button>
-          </div>
         </div>
       )}
 
@@ -963,17 +1438,6 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
           <div className="flex items-center gap-2 border-b border-[#FECACA] pb-3">
             <FileText className="h-4 w-4 text-[#B91C1C]" />
             <span className="text-xs font-semibold uppercase tracking-wider text-[#991B1B]">Referral</span>
-          </div>
-          {/* Auto-filled info */}
-          <div className="grid grid-cols-2 gap-4 text-xs text-[#6B7280]">
-            <div><span className="text-[#9CA3AF]">Referring </span>{doctorInfo?.name || doctorInfo?.username || '—'} · {(doctorInfo?.role || '').replace(/_/g, ' ')}</div>
-            <div><span className="text-[#9CA3AF]">Date </span>{new Date().toLocaleDateString('en-IN')}</div>
-          </div>
-          <div>
-            <label className={cls.label}>Clinical Findings</label>
-            <textarea value={data.clinicalFindings || ''} onChange={e => u('clinicalFindings', e.target.value)}
-              rows={2} placeholder="Summarize clinical findings..."
-              className={cls.textarea} />
           </div>
           <div>
             <label className={cls.label}>Reason for Referral</label>
@@ -1003,12 +1467,17 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
               ))}
             </div>
           </div>
-          <div className="flex justify-end border-t border-[#FECACA] pt-4">
-            <button type="button" onClick={handlePrint}
-              className="inline-flex items-center gap-2 rounded-lg border border-[#DC2626] bg-white px-4 py-2.5 text-sm font-semibold text-[#B91C1C] transition-colors hover:bg-[#FEF2F2]">
-              <Printer className="h-4 w-4" /><span>Print referral</span>
-            </button>
-          </div>
+        </div>
+      )}
+
+      {/* One slip per department: prescription + referral on the same page */}
+      {(isObservation || isReferred) && !disabled && (
+        <div className="flex justify-end">
+          <button type="button" onClick={handlePrint}
+            className="inline-flex items-center gap-2 rounded-lg border border-[#2563EB] bg-white px-4 py-2.5 text-sm font-semibold text-[#1D4ED8] transition-colors hover:bg-[#EFF6FF]">
+            <Printer className="h-4 w-4" />
+            <span>{isReferred ? 'Print prescription & referral slip' : 'Print prescription slip'}</span>
+          </button>
         </div>
       )}
 
@@ -1016,7 +1485,7 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
       {(isObservation || isReferred) && disabled && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
           <span className={`text-xs font-bold uppercase ${isObservation ? 'text-amber-600' : 'text-red-600'}`}>
-            {isObservation ? '📝 Prescription' : '🏥 Referral Sheet'}
+            {isObservation ? '📝 Prescription' : '🏥 Prescription & Referral'}
           </span>
           {data.clinicalFindings && <p className="text-xs text-gray-600"><span className="text-gray-400">Findings:</span> {data.clinicalFindings}</p>}
           {data.diagnosis && <p className="text-xs text-gray-600"><span className="text-gray-400">Dx:</span> {data.diagnosis}</p>}
@@ -1034,11 +1503,6 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
           {data.advice && <p className="text-xs text-gray-600"><span className="text-gray-400">Advice:</span> {data.advice}</p>}
         </div>
       )}
-
-      {/* Hidden printable document */}
-      <div ref={printRef} style={{ display: 'none' }}>
-        <PrintableDocument data={data} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
-      </div>
     </div>
   );
 }
@@ -1114,8 +1578,30 @@ function RemarksBlock({ data }: { data: any }) {
 // ── Specialist-Specific Read-Only Cards ──
 
 function EyeRecordCard({ d }: { d: any }) {
+  const eyeComplaints = d.eyeComplaints || { complaints: [], otherComplaint: '' };
+  const hasComplaints = (eyeComplaints.complaints || []).length > 0 || eyeComplaints.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Chief Complaints */}
+      {hasComplaints && (
+        <div className="bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-blue-600 uppercase tracking-wider block mb-1.5">Chief Complaints</span>
+          {(eyeComplaints.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(eyeComplaints.complaints || []).map((c: any, i: number) => (
+                <span key={i} className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md font-medium">
+                  {c.complaint}{c.side && c.complaint !== 'Spectacles' ? ` (${c.side === 'both' ? 'B/L' : c.side === 'left' ? 'L' : 'R'})` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {eyeComplaints.otherComplaint && (
+            <p className="text-xs text-blue-800 mt-1"><span className="font-semibold">Other:</span> {eyeComplaints.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
       <div className="grid grid-cols-3 gap-2">
         <div className="bg-green-50 border border-green-100 rounded-lg px-3 py-2 text-center">
           <span className="text-[10px] text-green-600 uppercase tracking-wider block">Right Eye</span>
@@ -1138,11 +1624,36 @@ function EyeRecordCard({ d }: { d: any }) {
 }
 
 function DentalRecordCard({ d }: { d: any }) {
+  const dentalComplaints = d.dentalComplaints || { complaints: [], affectedTeeth: [], otherComplaint: '' };
+  const hasComplaints = (dentalComplaints.complaints || []).length > 0 || (dentalComplaints.affectedTeeth || []).length > 0 || dentalComplaints.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Chief Complaints */}
+      {hasComplaints && (
+        <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-sky-600 uppercase tracking-wider block mb-1.5">Chief Complaints</span>
+          {(dentalComplaints.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(dentalComplaints.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-sky-100 text-sky-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {(dentalComplaints.affectedTeeth || []).length > 0 && (
+            <p className="text-xs text-sky-800 mt-1">
+              <span className="font-semibold">Affected Teeth:</span> {(dentalComplaints.affectedTeeth || []).sort((a: number, b: number) => a - b).join(', ')}
+            </p>
+          )}
+          {dentalComplaints.otherComplaint && (
+            <p className="text-xs text-sky-800 mt-1"><span className="font-semibold">Other:</span> {dentalComplaints.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
       {d.teethGums && (
         <div className="bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
-          <span className="text-[10px] text-sky-600 uppercase tracking-wider">Teeth & Gums</span>
+          <span className="text-[10px] text-sky-600 uppercase tracking-wider">Teeth & Gums Findings</span>
           <p className="text-sm text-sky-800 mt-1 font-medium">{d.teethGums}</p>
         </div>
       )}
@@ -1162,8 +1673,72 @@ function DentalRecordCard({ d }: { d: any }) {
 }
 
 function ENTRecordCard({ d }: { d: any }) {
+  const entComplaints = d.entComplaints || {
+    ear: { complaints: [], otherComplaint: '' },
+    nose: { complaints: [], otherComplaint: '' },
+    throat: { complaints: [], otherComplaint: '' },
+  };
+  
+  const hasEarComplaints = (entComplaints.ear.complaints || []).length > 0 || entComplaints.ear.otherComplaint;
+  const hasNoseComplaints = (entComplaints.nose.complaints || []).length > 0 || entComplaints.nose.otherComplaint;
+  const hasThroatComplaints = (entComplaints.throat.complaints || []).length > 0 || entComplaints.throat.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Ear Chief Complaints */}
+      {hasEarComplaints && (
+        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-amber-600 uppercase tracking-wider block mb-1.5">👂 Ear Complaints</span>
+          {(entComplaints.ear.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(entComplaints.ear.complaints || []).map((c: any, i: number) => (
+                <span key={i} className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-medium">
+                  {c.complaint}{c.side ? ` (${c.side === 'both' ? 'B/L' : c.side === 'left' ? 'L' : 'R'})` : ''}
+                </span>
+              ))}
+            </div>
+          )}
+          {entComplaints.ear.otherComplaint && (
+            <p className="text-xs text-amber-800 mt-1"><span className="font-semibold">Other:</span> {entComplaints.ear.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
+      {/* Nose Chief Complaints */}
+      {hasNoseComplaints && (
+        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-amber-600 uppercase tracking-wider block mb-1.5">👃 Nose Complaints</span>
+          {(entComplaints.nose.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(entComplaints.nose.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {entComplaints.nose.otherComplaint && (
+            <p className="text-xs text-amber-800 mt-1"><span className="font-semibold">Other:</span> {entComplaints.nose.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
+      {/* Throat Chief Complaints */}
+      {hasThroatComplaints && (
+        <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-amber-600 uppercase tracking-wider block mb-1.5">🗣️ Throat Complaints</span>
+          {(entComplaints.throat.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(entComplaints.throat.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {entComplaints.throat.otherComplaint && (
+            <p className="text-xs text-amber-800 mt-1"><span className="font-semibold">Other:</span> {entComplaints.throat.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
+      {/* Examination Findings */}
       <div className="grid grid-cols-3 gap-2">
         {[
           { label: '👂 Ear', value: d.ear, key: 'ear' },
@@ -1171,7 +1746,7 @@ function ENTRecordCard({ d }: { d: any }) {
           { label: '🗣 Throat', value: d.throat, key: 'throat' },
         ].map(item => (
           <div key={item.key} className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-            <span className="text-[10px] text-amber-600 uppercase tracking-wider block">{item.label}</span>
+            <span className="text-[10px] text-amber-600 uppercase tracking-wider block">Findings</span>
             <p className="text-sm text-amber-800 mt-1 font-medium leading-snug">{item.value || 'NAD'}</p>
           </div>
         ))}
@@ -1182,11 +1757,31 @@ function ENTRecordCard({ d }: { d: any }) {
 }
 
 function SkinRecordCard({ d }: { d: any }) {
+  const skinComplaints = d.skinComplaints || { complaints: [], otherComplaint: '' };
+  const hasComplaints = (skinComplaints.complaints || []).length > 0 || skinComplaints.otherComplaint;
+  
   return (
     <div className="space-y-2">
+      {/* Chief Complaints */}
+      {hasComplaints && (
+        <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
+          <span className="text-[10px] text-violet-600 uppercase tracking-wider block mb-1.5">Chief Complaints</span>
+          {(skinComplaints.complaints || []).length > 0 && (
+            <div className="flex flex-wrap gap-1 mb-1">
+              {(skinComplaints.complaints || []).map((c: string, i: number) => (
+                <span key={i} className="text-[10px] bg-violet-100 text-violet-800 px-2 py-0.5 rounded-md font-medium">{c}</span>
+              ))}
+            </div>
+          )}
+          {skinComplaints.otherComplaint && (
+            <p className="text-xs text-violet-800 mt-1"><span className="font-semibold">Other:</span> {skinComplaints.otherComplaint}</p>
+          )}
+        </div>
+      )}
+      
       {d.skinExam && (
         <div className="bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
-          <span className="text-[10px] text-violet-600 uppercase tracking-wider">Skin, Nails & Hair</span>
+          <span className="text-[10px] text-violet-600 uppercase tracking-wider">Examination Findings</span>
           <p className="text-sm text-violet-800 mt-1 font-medium">{d.skinExam}</p>
         </div>
       )}
@@ -1261,6 +1856,14 @@ function CommunityMedRecordCard({ d }: { d: any }) {
         </div>
       )}
 
+      {/* BP / Pulse */}
+      {(formatBP(d) || d.pulse) && (
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          {formatBP(d) && <span><span className="text-gray-400">BP:</span> <span className="font-bold text-gray-700">{formatBP(d)}</span></span>}
+          {d.pulse && <span><span className="text-gray-400">Pulse:</span> <span className="font-bold text-gray-700">{d.pulse} /min</span></span>}
+        </div>
+      )}
+
       {/* Anaemia */}
       {d.anaemia && (
         <div className="flex items-center space-x-2">
@@ -1299,6 +1902,82 @@ function CommunityMedRecordCard({ d }: { d: any }) {
   );
 }
 
+function ComplaintChips({ block, tone }: { block: any; tone: string }) {
+  const list: string[] = Array.isArray(block?.complaints) ? block.complaints : [];
+  if (!list.length && !block?.otherComplaint) return null;
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${tone}`}>
+      <span className="block mb-1.5 text-[10px] uppercase tracking-wider opacity-80">Chief Complaints</span>
+      {list.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-1">
+          {list.map(c => <span key={c} className="rounded-md bg-white/70 px-2 py-0.5 text-[10px] font-medium">{c}</span>)}
+        </div>
+      )}
+      {block?.otherComplaint && <p className="mt-1 text-xs"><span className="font-semibold">Other:</span> {block.otherComplaint}</p>}
+    </div>
+  );
+}
+
+function SystemsSummary({ d }: { d: any }) {
+  const rows = ['respiratory', 'cardiovascular', 'abdomen', 'cns'].filter(k => d[k]);
+  if (!rows.length) return null;
+  const LABEL: Record<string, string> = { respiratory: 'Respiratory', cardiovascular: 'Cardiovascular', abdomen: 'Abdomen', cns: 'CNS' };
+  return (
+    <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+      <span className="text-[10px] text-gray-500 uppercase tracking-wider block mb-1.5">Systemic</span>
+      {rows.map(k => (
+        <div key={k} className="flex items-center justify-between py-0.5 text-xs">
+          <span className="text-gray-500 font-medium">{LABEL[k]}</span>
+          <span className={`font-bold px-2 py-0.5 rounded border ${d[k] === 'NAD' ? 'text-green-700 bg-green-50 border-green-200' : 'text-red-700 bg-red-50 border-red-200'}`}>
+            {d[k] === 'Abnormal' && d[`${k}Detail`] ? `Abnormal: ${d[`${k}Detail`]}` : d[k]}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PediatricsRecordCard({ d }: { d: any }) {
+  return (
+    <div className="space-y-2">
+      <ComplaintChips block={d.pedComplaints} tone="bg-teal-50 border-teal-100 text-teal-800" />
+      <div className="grid grid-cols-2 gap-2">
+        <RecordField label="Growth" value={(d.growthFlags || []).join(', ')} />
+        <RecordField label="Deficiency signs" value={(d.deficiencySigns || []).join(', ')} />
+        <RecordField label="BP / Pulse" value={[formatBP(d), d.pulse ? `${d.pulse} /min` : ''].filter(Boolean).join(' · ')} />
+        <RecordField label="Immunisation" value={d.immunisation} />
+      </div>
+      <SystemsSummary d={d} />
+      <RecordField label="Developmental / behavioural" value={d.developmentalConcerns} />
+      <RemarksBlock data={d} />
+    </div>
+  );
+}
+
+function OBGYNRecordCard({ d }: { d: any }) {
+  const flags = [
+    d.dysmenorrhoea === 'Yes' && 'Dysmenorrhoea',
+    d.heavyBleeding === 'Yes' && 'Heavy bleeding',
+    d.abnormalDischarge === 'Yes' && 'Abnormal discharge',
+  ].filter(Boolean).join(', ');
+  const menarche = d.menarche === 'Yes' ? `Yes${d.menarcheAge ? ` (age ${d.menarcheAge})` : ''}` : d.menarche;
+  const cycles = [d.cycleRegularity, d.cycleLength && `${d.cycleLength}-day cycle`, d.flowDays && `${d.flowDays}-day flow`].filter(Boolean).join(', ');
+  return (
+    <div className="space-y-2">
+      <ComplaintChips block={d.obgComplaints} tone="bg-pink-50 border-pink-100 text-pink-800" />
+      <div className="grid grid-cols-2 gap-2">
+        <RecordField label="Menarche" value={menarche} />
+        <RecordField label="Cycles" value={cycles} />
+        <RecordField label="Concerns" value={flags} />
+        <RecordField label="Hygiene practice" value={d.hygienePractice} />
+        <RecordField label="Anaemia" value={d.anaemia} />
+        <RecordField label="Counselling" value={(d.counselling || []).join(', ')} />
+      </div>
+      <RemarksBlock data={d} />
+    </div>
+  );
+}
+
 /** Fallback for unrecognized specialty — show key-value pairs cleanly. */
 function GenericRecordCard({ d }: { d: any }) {
   const entries = Object.entries(d).filter(([k]) => !['status', 'assessment', 'clinicalFindings', 'diagnosis', 'remarks', 'medicines', 'advice', 'referralReason', 'referralDept', 'urgency'].includes(k));
@@ -1327,6 +2006,8 @@ function SpecialistRecordBody({ category, d }: { category: string; d: any }) {
     case 'ENT': return <ENTRecordCard d={d} />;
     case 'Skin_Specialist': return <SkinRecordCard d={d} />;
     case 'Community_Medicine': return <CommunityMedRecordCard d={d} />;
+    case 'Pediatrics': return <PediatricsRecordCard d={d} />;
+    case 'OBGYN': return <OBGYNRecordCard d={d} />;
     default: return <GenericRecordCard d={d} />;
   }
 }
@@ -1338,6 +2019,8 @@ const SPECIALIST_META: Record<string, { icon: React.ReactNode; label: string }> 
   ENT: { icon: <Ear className="h-4 w-4 text-[#6B7280]" />, label: 'ENT' },
   Skin_Specialist: { icon: <Scan className="h-4 w-4 text-[#6B7280]" />, label: 'Dermatology' },
   Community_Medicine: { icon: <Stethoscope className="h-4 w-4 text-[#6B7280]" />, label: 'Community Medicine' },
+  Pediatrics: { icon: <SpecialtyIcon specialty="Pediatrics" className="h-4 w-4 text-[#6B7280]" />, label: 'Paediatrics' },
+  OBGYN: { icon: <SpecialtyIcon specialty="OBGYN" className="h-4 w-4 text-[#6B7280]" />, label: 'Obstetrics & Gynaecology' },
 };
 
 function OtherRecordsPanel({ studentId, eventId, currentCategory }: {
@@ -1830,9 +2513,11 @@ function ClinicalWorkflow({ user, campId, campName, campSchoolId, onBack }: {
       </div>
 
       {/* ── MAIN BODY: LEFT + RIGHT ── */}
-      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden flex-col md:flex-row">
         {/* ── LEFT PANE: Student List ── */}
-        <div className="clinical-left-pane flex w-[min(100%,340px)] min-w-[280px] max-w-[340px] flex-shrink-0 flex-col overflow-hidden border-r border-[#E5E7EB] bg-[#F1F4F8]">
+        <div className={`clinical-left-pane flex-shrink-0 flex-col overflow-hidden border-[#E5E7EB] bg-[#F1F4F8] ${
+          selectedStudent ? 'hidden md:flex' : 'flex'
+        } w-full md:w-[min(100%,340px)] md:min-w-[280px] md:max-w-[340px] border-b md:border-b-0 md:border-r`}>
           {/* Search */}
           <div className="flex-shrink-0 space-y-2 border-b border-[#E5E7EB] bg-[#F7F9FB] p-3">
             <div className="relative">
@@ -1899,7 +2584,9 @@ function ClinicalWorkflow({ user, campId, campName, campSchoolId, onBack }: {
         </div>
 
         {/* ── RIGHT PANE: Clinical Workspace ── */}
-        <div className="clinical-right-pane min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[#F7F9FB]">
+        <div className={`clinical-right-pane min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden bg-[#F7F9FB] ${
+          !selectedStudent ? 'hidden md:block' : 'block'
+        }`}>
           {!selectedStudent ? (
             /* Empty state */
             <div className="flex h-full flex-col items-center justify-center px-8 text-center">
@@ -1933,7 +2620,7 @@ function ClinicalWorkflow({ user, campId, campName, campSchoolId, onBack }: {
                     )}
                     <div className="mt-3">
                       <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-[#9CA3AF]">Domain progress</p>
-                      <DomainProgressBar examinedCategories={selectedStudent.examined_categories} />
+                      <DomainProgressBar examinedCategories={selectedStudent.examined_categories} gender={selectedStudent.gender} />
                     </div>
                   </div>
                 </div>
@@ -1968,6 +2655,18 @@ function ClinicalWorkflow({ user, campId, campName, campSchoolId, onBack }: {
                 {specialistCategory === 'Skin_Specialist' && <SkinExamForm data={examData} onChange={handleExamChange} doctorInfo={user} studentInfo={selectedStudent} campName={campName} />}
                 {specialistCategory === 'Community_Medicine' && <CommunityMedForm data={examData} onChange={handleExamChange} doctorInfo={user} studentInfo={selectedStudent} campName={campName} />}
                 {specialistCategory === 'Other' && <CommunityMedForm data={examData} onChange={handleExamChange} doctorInfo={user} studentInfo={selectedStudent} campName={campName} />}
+                {specialistCategory === 'Pediatrics' && <PediatricsExamForm data={examData} onChange={handleExamChange} doctorInfo={user} studentInfo={selectedStudent} campName={campName} />}
+                {specialistCategory === 'OBGYN' && (
+                  specialtyAppliesTo('OBGYN', selectedStudent.gender)
+                    ? <OBGYNExamForm data={examData} onChange={handleExamChange} doctorInfo={user} studentInfo={selectedStudent} campName={campName} />
+                    : (
+                      <div className="py-10 text-center">
+                        <SpecialtyIcon specialty="OBGYN" className="mx-auto mb-3 h-8 w-8 text-[#D1D5DB]" />
+                        <p className="text-sm font-semibold text-[#6B7280]">Not applicable</p>
+                        <p className="mt-1 text-xs text-[#9CA3AF]">The OBGYN examination is only for female students.</p>
+                      </div>
+                    )
+                )}
               </div>
 
               {/* ── E. Other specialists' records (read-only) ── */}

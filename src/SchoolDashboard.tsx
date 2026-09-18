@@ -7,6 +7,11 @@ import {
   Bell, ClipboardCheck, Loader2, AlertCircle, History
 } from 'lucide-react';
 import GeneralInfoForm from './GeneralInfoForm';
+import AnalyticsPanel from './components/AnalyticsCharts';
+import { AddStudentModal, CSVUploadPanel } from './components/StudentModals';
+import DownloadDataButton from './components/DownloadDataButton';
+import { printSlips, fetchSlips, openPrintWindow } from './lib/printSlip';
+import { specialtyLabel } from './constants/specialties';
 
 // Socket.IO client (optional)
 let io: any = null;
@@ -426,69 +431,7 @@ function EventWorkspace({ user, event, onBack }: { user: User; event: EventData;
 // ════════════════════════════════════════
 // ██ PRINTABLE DOCUMENT HELPERS
 // ════════════════════════════════════════
-function buildDocumentBody(d: any, doctorInfo: any, studentInfo: any, campName: string, isReferral: boolean, specialty: string, today: string): string {
-  const studentName = studentInfo?.name || '—';
-  const studentAge = studentInfo?.age || '—';
-  const studentGender = studentInfo?.gender === 'M' ? 'Male' : studentInfo?.gender === 'F' ? 'Female' : '—';
-  const studentClass = studentInfo?.student_class || '—';
-  const studentSection = studentInfo?.section ? `-${studentInfo.section}` : '';
-  const fatherName = studentInfo?.father_name || '—';
-  const phone = studentInfo?.phone || '';
-  const doctorName = doctorInfo?.name || doctorInfo?.username || '—';
-  const docSpecialty = specialty || (doctorInfo?.role || '').replace(/_/g, ' ');
-
-  let html = `<div style="font-family:serif;color:#000;background:#fff;padding:40px;max-width:210mm;margin:0 auto;">`;
-  html += `<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:20px;">`;
-  html += `<h1 style="font-size:20px;font-weight:bold;margin:0;">AIIMS BATHINDA — SCHOOL HEALTH CAMP</h1>`;
-  if (campName) html += `<p style="font-size:12px;margin:4px 0 0;color:#555;">${campName}</p>`;
-  html += `</div>`;
-  html += `<div style="display:flex;justify-content:space-between;margin-bottom:16px;">`;
-  html += `<div><span style="display:inline-block;padding:4px 14px;border:2px solid #000;font-weight:bold;font-size:14px;text-transform:uppercase;border-radius:4px;">${isReferral ? 'REFERRAL SHEET' : 'PRESCRIPTION'}</span>`;
-  html += `<span style="margin-left:12px;font-size:13px;color:#555;">Department: ${docSpecialty}</span></div>`;
-  html += `<div style="font-size:13px;">Date: ${today}</div></div>`;
-  html += `<table style="width:100%;font-size:13px;margin-bottom:16px;border-collapse:collapse;"><tbody>`;
-  html += `<tr><td style="padding:3px 0;font-weight:bold;width:120px;">Student Name:</td><td>${studentName}</td><td style="font-weight:bold;width:60px;">Age:</td><td style="width:50px;">${studentAge}</td><td style="font-weight:bold;width:60px;">Sex:</td><td style="width:50px;">${studentGender}</td></tr>`;
-  html += `<tr><td style="padding:3px 0;font-weight:bold;">Class:</td><td>${studentClass}${studentSection}</td><td style="font-weight:bold;">Father:</td><td colspan="3">${fatherName}</td></tr>`;
-  const regNo = studentInfo?.registration_number || '—';
-  html += `<tr><td style="padding:3px 0;font-weight:bold;">Reg No:</td><td>${regNo}</td><td style="font-weight:bold;">Contact:</td><td colspan="3">${phone || '—'}</td></tr>`;
-  html += `</tbody></table>`;
-  html += `<div style="border-top:1px solid #ccc;padding-top:12px;margin-bottom:12px;"><h3 style="font-size:14px;font-weight:bold;margin:0 0 6px;">Clinical Findings</h3>`;
-  html += `<p style="font-size:13px;white-space:pre-wrap;">${d.clinicalFindings || '—'}</p></div>`;
-
-  if (!isReferral) {
-    html += `<div style="border-top:1px solid #ccc;padding-top:12px;margin-bottom:12px;">`;
-    html += `<h3 style="font-size:14px;font-weight:bold;margin:0 0 6px;">Diagnosis</h3><p style="font-size:13px;">${d.diagnosis || '—'}</p>`;
-    html += `<h3 style="font-size:14px;font-weight:bold;margin:12px 0 6px;">Prescription (Rx)</h3>`;
-    if ((d.medicines || []).length > 0) {
-      html += `<table style="width:100%;font-size:13px;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #999;">`;
-      html += `<th style="text-align:left;padding:4px;font-weight:bold;">#</th><th style="text-align:left;padding:4px;font-weight:bold;">Medicine</th><th style="text-align:left;padding:4px;font-weight:bold;">Dosage</th><th style="text-align:left;padding:4px;font-weight:bold;">Freq</th><th style="text-align:left;padding:4px;font-weight:bold;">Duration</th></tr></thead><tbody>`;
-      (d.medicines || []).forEach((m: any, i: number) => {
-        html += `<tr style="border-bottom:1px solid #eee;"><td style="padding:4px;">${i + 1}.</td><td style="padding:4px;">${m.name || '—'}</td><td style="padding:4px;">${m.dosage || '—'}</td><td style="padding:4px;">${m.frequency || '—'}</td><td style="padding:4px;">${m.duration || '—'}</td></tr>`;
-      });
-      html += `</tbody></table>`;
-    } else {
-      html += `<p style="font-size:13px;color:#999;">No medicines prescribed.</p>`;
-    }
-    if (d.advice) html += `<div style="margin-top:12px;"><h3 style="font-size:14px;font-weight:bold;margin:0 0 6px;">Advice</h3><p style="font-size:13px;white-space:pre-wrap;">${d.advice}</p></div>`;
-    html += `</div>`;
-  } else {
-    html += `<div style="border-top:1px solid #ccc;padding-top:12px;margin-bottom:12px;">`;
-    html += `<h3 style="font-size:14px;font-weight:bold;margin:0 0 6px;">Reason for Referral</h3>`;
-    html += `<p style="font-size:13px;white-space:pre-wrap;">${d.referralReason || '—'}</p>`;
-    html += `<div style="display:flex;gap:40px;margin-top:10px;">`;
-    html += `<div><span style="font-weight:bold;font-size:13px;">Recommended Dept/Hospital: </span><span style="font-size:13px;">${d.referralDept || '—'}</span></div>`;
-    html += `<div><span style="font-weight:bold;font-size:13px;">Urgency: </span><span style="font-size:13px;">${d.urgency || 'Routine'}</span></div></div></div>`;
-  }
-
-  html += `<div style="border-top:2px solid #000;padding-top:16px;margin-top:30px;display:flex;justify-content:space-between;">`;
-  html += `<div style="font-size:13px;"><p style="font-weight:bold;">${doctorName}</p><p style="color:#555;">${docSpecialty}</p></div>`;
-  html += `<div style="text-align:right;font-size:13px;"><p style="margin-top:30px;border-top:1px solid #000;padding-top:4px;">Signature</p></div></div></div>`;
-  return html;
-}
-
-function buildPrintableHTML(d: any, doctorInfo: any, studentInfo: any, campName: string, isReferral: boolean, specialty: string, today: string): string {
-  return `<html><head><title>Print Document</title><style>body{margin:0;padding:0;font-family:serif;}@page{size:A4;margin:15mm;}</style></head><body>${buildDocumentBody(d, doctorInfo, studentInfo, campName, isReferral, specialty, today)}</body></html>`;
-}
+// Slip printing lives in src/lib/printSlip.ts (shared with doctor and admin views).
 
 // ════════════════════════════════════════
 // ██ OPTION A: ROSTER MANAGEMENT
@@ -588,75 +531,36 @@ function RosterManagement({ user, eventId, event }: { user: User; eventId: numbe
     finally { setLoadingDocs(false); }
   };
 
-  // Print a single document
-  const handlePrintDoc = (record: any) => {
-    const d = record.parsed_data || {};
-    const isReferral = d.status === 'R';
-    const specialty = (record.category || '').replace(/_/g, ' ');
-    const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const s = viewingDocsStudent;
-    const html = buildPrintableHTML(d, { name: record.doctor_id, role: record.category }, s, '', isReferral, specialty, today);
-    const pw = window.open('', '_blank');
-    if (!pw) return;
-    pw.document.write(html);
-    pw.document.close();
-    pw.focus();
-    setTimeout(() => { pw.print(); pw.close(); }, 300);
-  };
-
-  // Helper: check if a parsed record has any meaningful prescription/referral content
-  const hasPrintableContent = (d: any): boolean => {
-    if (!d) return false;
-    const status = d.status;
-    // Only print Observation (O) or Referral (R) records
-    if (status !== 'O' && status !== 'R') return false;
-    if (status === 'R') {
-      // Referral needs at least a reason or dept
-      return !!(d.referralReason?.trim() || d.referralDept?.trim() || d.clinicalFindings?.trim());
+  // Print one department's slip (prescription + referral on one page)
+  const handlePrintDoc = async (record: any) => {
+    if (!viewingDocsStudent) return;
+    const win = openPrintWindow();
+    if (!win) return;
+    try {
+      const slips = await fetchSlips(eventId, { studentId: viewingDocsStudent.student_id, category: record.category });
+      if (!slips.length) { win.close(); alert('Nothing to print for this department.'); return; }
+      printSlips(slips, win);
+    } catch (e: any) {
+      win.close();
+      alert(e?.message || 'Could not load slip');
     }
-    // Observation/Prescription: needs at least one meaningful field
-    return !!(
-      d.clinicalFindings?.trim() ||
-      d.diagnosis?.trim() ||
-      d.advice?.trim() ||
-      (Array.isArray(d.medicines) && d.medicines.some((m: any) => m.name?.trim()))
-    );
   };
 
-  // Bulk print all docs
+  // Bulk print: one page per department slip, for every student in the camp
   const handleBulkPrint = async () => {
+    const win = openPrintWindow();
+    if (!win) return;
     setBulkPrinting(true);
     try {
-      const allDocs: { student: Student; record: any }[] = [];
-      for (const s of examinedStudentsList) {
-        const res = await fetch(`/api/students/${s.student_id}/all-records?event_id=${eventId}`);
-        const data = await res.json();
-        const docs = (data.records || []).filter((doc: any) => {
-          const parsed = doc.parsed_data || {};
-          return hasPrintableContent(parsed);
-        });
-        for (const doc of docs) {
-          allDocs.push({ student: data.student || s, record: doc });
-        }
-      }
-      if (allDocs.length === 0) { setBulkPrinting(false); alert('No prescriptions or referrals with content to print.'); return; }
-      const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      let fullHTML = '<html><head><title>Print All Documents</title><style>body{margin:0;padding:0;font-family:serif;}@page{size:A4;margin:15mm;}.page-break{page-break-after:always;}</style></head><body>';
-      allDocs.forEach((item, idx) => {
-        const d = item.record.parsed_data || {};
-        const isReferral = d.status === 'R';
-        const specialty = (item.record.category || '').replace(/_/g, ' ');
-        fullHTML += buildDocumentBody(d, { name: item.record.doctor_id, role: item.record.category }, item.student, '', isReferral, specialty, today);
-        if (idx < allDocs.length - 1) fullHTML += '<div class="page-break"></div>';
-      });
-      fullHTML += '</body></html>';
-      const pw = window.open('', '_blank');
-      if (!pw) { setBulkPrinting(false); return; }
-      pw.document.write(fullHTML);
-      pw.document.close();
-      pw.focus();
-      setTimeout(() => { pw.print(); pw.close(); setBulkPrinting(false); }, 300);
-    } catch { setBulkPrinting(false); }
+      const slips = await fetchSlips(eventId);
+      if (!slips.length) { win.close(); alert('No prescriptions or referrals with content to print.'); return; }
+      printSlips(slips, win);
+    } catch (e: any) {
+      win.close();
+      alert(e?.message || 'Could not load slips');
+    } finally {
+      setBulkPrinting(false);
+    }
   };
 
   // If editing a student's general info, show the form
@@ -726,7 +630,7 @@ function RosterManagement({ user, eventId, event }: { user: User; eventId: numbe
               value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-4 py-3 rounded-xl bg-slate-950 border border-slate-800 text-white focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 outline-none transition-all text-sm" />
           </div>
-          <div className="flex space-x-3">
+          <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-3">
             <button onClick={() => setShowAddModal(true)}
               className="flex-1 md:flex-none bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-400 hover:to-purple-500 text-white px-5 py-3 rounded-xl font-bold transition-all flex items-center justify-center space-x-2 shadow-lg whitespace-nowrap text-sm">
               <Plus className="w-4 h-4" /><span>Add Student</span>
@@ -738,7 +642,7 @@ function RosterManagement({ user, eventId, event }: { user: User; eventId: numbe
             {docCount > 0 && (
               <button onClick={handleBulkPrint} disabled={bulkPrinting}
                 className="flex-1 md:flex-none bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 px-5 py-3 rounded-xl font-bold transition-all flex items-center justify-center space-x-2 whitespace-nowrap text-sm disabled:opacity-50">
-                <Printer className="w-4 h-4" /><span>{bulkPrinting ? 'Loading...' : `Print Prescriptions (${docCount})`}</span>
+                <Printer className="w-4 h-4" /><span>{bulkPrinting ? 'Loading...' : 'Print all slips'}</span>
               </button>
             )}
           </div>
@@ -881,13 +785,13 @@ function RosterManagement({ user, eventId, event }: { user: User; eventId: numbe
                 {studentDocs.map((rec: any, i: number) => {
                   const d = rec.parsed_data || {};
                   const isReferral = d.status === 'R';
-                  const specialty = (rec.category || '').replace(/_/g, ' ');
+                  const specialty = specialtyLabel(rec.category || '');
                   return (
                     <div key={i} className={`rounded-2xl p-4 border ${isReferral ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center space-x-2">
                           <span className={`text-xs font-bold uppercase ${isReferral ? 'text-red-400' : 'text-amber-400'}`}>
-                            {isReferral ? '🏥 Referral' : '📝 Prescription'}
+                            {isReferral ? 'Prescription & Referral' : 'Prescription'}
                           </span>
                           <span className="text-xs text-slate-500">— {specialty}</span>
                         </div>
@@ -937,373 +841,8 @@ function RosterManagement({ user, eventId, event }: { user: User; eventId: numbe
   );
 }
 
-// ════════════════════════════════════════
-// ██ ADD STUDENT MODAL (reused from DoctorWorkflow)
-// ════════════════════════════════════════
-function AddStudentModal({ onClose, onCreated, userId, eventId }: {
-  onClose: () => void; onCreated: () => void; userId: string; eventId: number;
-}) {
-  const [f, setF] = useState({ name: '', age: '', dob: '', gender: '', student_class: '', section: '', blood_group: '', father_name: '', phone: '', registration_number: '' });
-  const [saving, setSaving] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const nameRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { nameRef.current?.focus(); }, []);
+// AddStudentModal and CSVUploadPanel are now imported from './components/StudentModals'
 
-  const upd = (k: string, v: string) => {
-    setF(p => ({ ...p, [k]: v }));
-    setErrors(p => ({ ...p, [k]: '' }));
-    // Auto-calc age from DOB
-    if (k === 'dob' && v) {
-      const age = calcAge(v);
-      if (age !== null) setF(p => ({ ...p, dob: v, age: String(age) }));
-    }
-  };
-
-  const validate = (): boolean => {
-    const e: Record<string, string> = {};
-    if (!f.name.trim()) e.name = 'Name is required';
-    if (!f.gender) e.gender = 'Sex is required';
-    if (!f.registration_number.trim()) e.registration_number = 'Registration number is required';
-    if (f.phone?.trim() && !/^\d{10}$/.test(f.phone.replace(/\D/g, ''))) e.phone = 'Valid 10-digit phone is required';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!validate()) return;
-    setSaving(true);
-    try {
-      const searchRes = await fetch(`/api/students/search?event_id=${eventId}&query=${encodeURIComponent(f.registration_number.trim())}`);
-      const searchData = await searchRes.json();
-      if (searchData.some((s: any) => s.registration_number === f.registration_number.trim())) {
-        setErrors(p => ({ ...p, registration_number: 'Registration number already exists in this camp' }));
-        setSaving(false);
-        return;
-      }
-
-      const res = await fetch('/api/students', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...f, age: f.age ? parseInt(f.age) : null, user_id: userId, event_id: eventId, added_by: userId }),
-      });
-      const data = await res.json();
-      if (data.success) onCreated();
-    } catch { alert('Error creating student'); }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-lg p-6 shadow-2xl relative" onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
-        <h3 className="text-xl font-bold text-white mb-5 flex items-center"><UserPlus className="w-5 h-5 mr-2 text-violet-400" /> Add New Student</h3>
-        <form onSubmit={handleSave} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="col-span-2">
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">Student Name *</label>
-              <input ref={nameRef} value={f.name} onChange={e => upd('name', e.target.value)} required
-                className={`w-full bg-slate-950 border rounded-xl px-4 py-3 text-white text-lg focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 placeholder-slate-600 ${errors.name ? 'border-red-500/50' : 'border-slate-800'}`} placeholder="Full name" />
-              {errors.name && <p className="text-red-400 text-xs mt-1">{errors.name}</p>}
-            </div>
-
-            {/* Sex */}
-            <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">Sex *</label>
-              <div className="flex space-x-3 mt-1">
-                {[{ v: 'M', label: 'Male' }, { v: 'F', label: 'Female' }].map(opt => (
-                  <button key={opt.v} type="button" onClick={() => upd('gender', opt.v)}
-                    className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition-all border flex items-center justify-center space-x-2 ${
-                      f.gender === opt.v
-                        ? 'bg-violet-500/20 text-violet-400 border-violet-500/30'
-                        : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-600'
-                    }`}>
-                    {f.gender === opt.v && <Check className="w-3.5 h-3.5" />}
-                    <span>{opt.label}</span>
-                  </button>
-                ))}
-              </div>
-              {errors.gender && <p className="text-red-400 text-xs mt-1">{errors.gender}</p>}
-            </div>
-
-            {/* DOB */}
-            <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">Date of Birth *</label>
-              <input type="date" value={f.dob} onChange={e => upd('dob', e.target.value)}
-                className={`w-full bg-slate-950 border rounded-xl px-3 py-2.5 text-white text-sm focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all ${errors.dob ? 'border-red-500/50' : 'border-slate-800'}`} />
-              {errors.dob && <p className="text-red-400 text-xs mt-1">{errors.dob}</p>}
-            </div>
-
-            {/* Class */}
-            <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">Class</label>
-              <select value={f.student_class} onChange={e => upd('student_class', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white text-sm focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all">
-                {CLASSES.map(o => <option key={o} value={o}>{o || '— Select —'}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">Section</label>
-              <select value={f.section} onChange={e => upd('section', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white text-sm focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all">
-                {SECTIONS.map(o => <option key={o} value={o}>{o || '— Select —'}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">Blood Group</label>
-              <select value={f.blood_group} onChange={e => upd('blood_group', e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white text-sm focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all">
-                {BLOOD_GROUPS.map(o => <option key={o} value={o}>{o || '— Select —'}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">Father's Name</label>
-              <input value={f.father_name} onChange={e => upd('father_name', e.target.value)} placeholder="Optional"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white text-sm focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all placeholder-slate-600" />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">Registration Number *</label>
-              <input value={f.registration_number} onChange={e => upd('registration_number', e.target.value)} placeholder="School reg. no"
-                className={`w-full bg-slate-950 border rounded-xl px-3 py-2.5 text-white text-sm focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all placeholder-slate-600 ${errors.registration_number ? 'border-red-500/50' : 'border-slate-800'}`} />
-              {errors.registration_number && <p className="text-red-400 text-xs mt-1">{errors.registration_number}</p>}
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 uppercase tracking-wider mb-1.5">Phone</label>
-              <input value={f.phone} onChange={e => upd('phone', e.target.value)} placeholder="Optional" type="tel"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-white text-sm focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all placeholder-slate-600" />
-            </div>
-          </div>
-          <button type="submit" disabled={saving}
-            className="w-full bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-400 hover:to-purple-500 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all disabled:opacity-50 mt-2">
-            {saving ? 'Saving...' : 'Add Student'}
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ════════════════════════════════════════
-// ██ STUDENT UPLOAD PANEL (EXCEL/CSV)
-// ════════════════════════════════════════
-interface ParsedRow {
-  data: Record<string, string>;
-  valid: boolean;
-  errors: string[];
-}
-
-function CSVUploadPanel({ eventId, userId, onClose, onDone }: {
-  eventId: number; userId: string; onClose: () => void; onDone: () => void;
-}) {
-  const [parsedRows, setParsedRows] = useState<ParsedRow[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ inserted: any[]; errors: any[] } | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const downloadTemplate = () => {
-    window.open('/api/students/csv-template', '_blank');
-  };
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setUploadError(null);
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws, { defval: '' });
-        
-        if (data.length > 0) {
-          const normalizedData = data.map((row: any) => {
-            const newRow: any = {};
-            for (const key of Object.keys(row)) {
-              newRow[key.trim().toLowerCase()] = row[key];
-            }
-            return newRow;
-          });
-
-          const firstRow = normalizedData[0];
-          if (firstRow.name === undefined && firstRow.gender === undefined && firstRow.dob === undefined) {
-             const detected = Object.keys(firstRow).join(', ') || 'None';
-             setUploadError(`Invalid columns detected. Expected 'name', 'dob', etc. \n\nFound: [${detected}]. \n\nPlease upload a valid Excel or CSV file with appropriate headers.`);
-             setParsedRows([]);
-             return;
-          }
-
-          const rows: ParsedRow[] = normalizedData.map((row: any) => {
-            const errors: string[] = [];
-            if (!row.name?.toString().trim()) errors.push('Name is required');
-            if (row.gender && !['M', 'F', 'm', 'f'].includes(row.gender.toString().trim())) errors.push('Gender must be M or F');
-            if (row.dob) {
-              let dobStr = row.dob.toString();
-              if (typeof row.dob === 'number') {
-                const d = new Date((row.dob - 25569) * 86400 * 1000);
-                dobStr = d.toISOString().split('T')[0];
-              }
-              const normalized = normalizeDateStr(dobStr);
-              row.dob = normalized;  
-              const d = new Date(normalized);
-              if (isNaN(d.getTime())) errors.push('Invalid DOB format (use DD-MM-YYYY or YYYY-MM-DD)');
-            }
-            if (row.phone?.toString().trim()) {
-              if (!/^\d{10}$/.test(row.phone.toString().replace(/\D/g, ''))) errors.push('Invalid 10-digit phone number');
-            }
-            return { data: row, valid: errors.length === 0, errors };
-          });
-          setParsedRows(rows);
-          setResult(null);
-        } else {
-           setUploadError('The uploaded file is empty.');
-           setParsedRows([]);
-        }
-      } catch (err) {
-        console.error(err);
-        setUploadError('Failed to parse file. Please ensure it is a valid .xlsx, .xls or .csv file.');
-        setParsedRows([]);
-      }
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  const handleUpload = async () => {
-    const validRows = parsedRows.filter(r => r.valid).map(r => r.data);
-    if (validRows.length === 0) return;
-
-    setUploading(true);
-    try {
-      const res = await fetch('/api/students/bulk', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ students: validRows, event_id: eventId, added_by: userId }),
-      });
-      const data = await res.json();
-      setResult({ inserted: data.inserted, errors: data.errors });
-    } catch { alert('Upload failed'); }
-    finally { setUploading(false); }
-  };
-
-  const validCount = parsedRows.filter(r => r.valid).length;
-  const errorCount = parsedRows.filter(r => !r.valid).length;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-700 rounded-3xl w-full max-w-3xl p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
-        <h3 className="text-xl font-bold text-white mb-5 flex items-center"><Upload className="w-5 h-5 mr-2 text-violet-400" /> Bulk Student Upload</h3>
-
-        {/* Step 1: Template + File */}
-        <div className="space-y-4">
-          <div className="flex space-x-3">
-            <button onClick={downloadTemplate}
-              className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 text-violet-400 border border-slate-700 px-4 py-2.5 rounded-xl text-sm font-medium transition-all">
-              <Download className="w-4 h-4" /><span>Download Template</span>
-            </button>
-            <button onClick={() => fileRef.current?.click()}
-              className="flex items-center space-x-2 bg-violet-500/20 hover:bg-violet-500/30 text-violet-400 border border-violet-500/30 px-4 py-2.5 rounded-xl text-sm font-medium transition-all">
-              <FileText className="w-4 h-4" /><span>Choose Excel File</span>
-            </button>
-            <input ref={fileRef} type="file" accept=".xlsx, .xls, .csv" onChange={handleFileChange} className="hidden" />
-          </div>
-
-          {uploadError && (
-            <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl mt-4">
-              <div className="flex items-start space-x-3">
-                <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                <div className="text-sm text-red-300 font-medium whitespace-pre-wrap">{uploadError}</div>
-              </div>
-            </div>
-          )}
-
-          {/* Dry Run Preview */}
-          {parsedRows.length > 0 && !result && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <span className="text-sm text-slate-400">Preview: {parsedRows.length} rows</span>
-                  <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-xs font-bold">{validCount} valid</span>
-                  {errorCount > 0 && <span className="bg-red-500/20 text-red-400 border border-red-500/30 px-2.5 py-0.5 rounded-full text-xs font-bold">{errorCount} errors</span>}
-                </div>
-                <button onClick={handleUpload} disabled={uploading || validCount === 0}
-                  className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-400 hover:to-purple-500 text-white px-5 py-2 rounded-xl font-bold text-sm transition-all disabled:opacity-50 flex items-center space-x-2">
-                  <Upload className="w-4 h-4" /><span>{uploading ? 'Uploading...' : `Upload ${validCount} Students`}</span>
-                </button>
-              </div>
-
-              <div className="overflow-x-auto max-h-60 overflow-y-auto rounded-xl border border-slate-800">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-950 text-slate-500 sticky top-0">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">#</th>
-                      <th className="px-3 py-2 font-medium">Name</th>
-                      <th className="px-3 py-2 font-medium">Gender</th>
-                      <th className="px-3 py-2 font-medium">DOB</th>
-                      <th className="px-3 py-2 font-medium">Class</th>
-                      <th className="px-3 py-2 font-medium">Phone</th>
-                      <th className="px-3 py-2 font-medium">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800/50">
-                    {parsedRows.map((row, i) => (
-                      <tr key={i} className={row.valid ? 'bg-emerald-500/5' : 'bg-red-500/5'}>
-                        <td className="px-3 py-2 text-slate-400">{i + 1}</td>
-                        <td className="px-3 py-2 text-white font-medium">{row.data.name || '—'}</td>
-                        <td className="px-3 py-2 text-slate-300">{row.data.gender || '—'}</td>
-                        <td className="px-3 py-2 text-slate-300">{row.data.dob || '—'}</td>
-                        <td className="px-3 py-2 text-slate-300">{row.data.student_class || '—'}</td>
-                        <td className="px-3 py-2 text-slate-300">{row.data.phone || '—'}</td>
-                        <td className="px-3 py-2">
-                          {row.valid ? (
-                            <span className="text-emerald-400 font-bold">✓ Valid</span>
-                          ) : (
-                            <span className="text-red-400 font-bold" title={row.errors.join('; ')}>✗ {row.errors.join(', ')}</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* Result */}
-          {result && (
-            <div className="space-y-3">
-              <div className="bg-emerald-500/10 border border-emerald-500/30 p-4 rounded-xl">
-                <p className="text-emerald-400 font-bold text-sm"><Check className="w-4 h-4 inline mr-1" /> {result.inserted.length} students uploaded successfully!</p>
-              </div>
-              {result.errors.length > 0 && (
-                <div className="bg-red-500/10 border border-red-500/30 p-4 rounded-xl">
-                  <p className="text-red-400 font-bold text-sm mb-2"><AlertTriangle className="w-4 h-4 inline mr-1" /> {result.errors.length} rows failed:</p>
-                  <div className="space-y-1">
-                    {result.errors.map((err: any, i: number) => (
-                      <p key={i} className="text-red-300 text-xs">Row {err.row}: {err.errors.map((e: any) => `${e.column}: ${e.reason}`).join(', ')}</p>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <button onClick={onDone}
-                className="w-full bg-gradient-to-r from-violet-500 to-purple-600 text-white font-bold py-3 rounded-xl transition-all">
-                Done
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 // ════════════════════════════════════════
 // ██ OPTION B: PROGRESS TRACKING
@@ -1365,6 +904,9 @@ function ProgressTracking({ eventId }: { eventId: number }) {
             <button onClick={() => { setClassFilter(''); setSectionFilter(''); setGenderFilter(''); }}
               className="text-xs text-red-400 underline">Clear</button>
           )}
+          <div className="ml-auto">
+            <DownloadDataButton eventId={eventId} filters={{ student_class: classFilter, section: sectionFilter, gender: genderFilter }} />
+          </div>
         </div>
       </div>
 
@@ -1393,6 +935,9 @@ function ProgressTracking({ eventId }: { eventId: number }) {
           </div>
         </div>
       )}
+
+      {/* Analytics Charts */}
+      <AnalyticsPanel data={stats} />
 
       {/* Department Breakdown Table */}
       {deptEntries.length > 0 && (
@@ -1459,7 +1004,8 @@ function ProgressTracking({ eventId }: { eventId: number }) {
                   let referralDepts: string[] = [];
                   try {
                     const d = JSON.parse(rec.json_data);
-                    assessment = d.assessment === 'N' ? 'Normal' : d.assessment === 'O' ? 'Observation' : d.assessment === 'R' ? 'Referred' : '—';
+                    const st = d.status || d.assessment;
+                    assessment = st === 'N' ? 'Normal' : st === 'O' ? 'Observation' : st === 'R' ? 'Referred' : '—';
                     if (d.referralDepts) referralDepts = d.referralDepts;
                   } catch {}
 

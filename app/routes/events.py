@@ -1,6 +1,6 @@
 import logging
 import json
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, session
 from datetime import datetime
 import psycopg2
 import psycopg2.extras
@@ -8,6 +8,7 @@ import psycopg2.extras
 from app.db import get_db_conn
 from app.helpers import row_to_dict, rows_to_list, enrich_events_with_status
 from app.services.audit import log_audit
+from app.helpers import login_required
 
 logger = logging.getLogger('aiims.events')
 bp = Blueprint('events', __name__)
@@ -59,7 +60,10 @@ def api_get_event(event_id):
 
 
 @bp.route("/api/events", methods=["POST"])
+@login_required
 def api_create_event():
+    if session["user"].get("role") != "Admin":
+        return jsonify({"success": False, "message": "Admin access required"}), 403
     data = request.get_json(force=True)
     now = datetime.utcnow().isoformat()
     
@@ -97,18 +101,21 @@ def api_create_event():
             data.get("start_date", ""), data.get("end_date", ""),
             data.get("operational_hours", ""),
             data.get("tag", "Upcoming"), now,
-            data.get("created_by", "admin"),
+            session["user"]["username"],
         ))
         new_id = cur.fetchone()["event_id"]
         conn.commit()
         
-    log_audit(data.get("created_by", "admin"), "CREATE_EVENT",
+    log_audit(session["user"]["username"], "CREATE_EVENT",
               f"Created event {new_id}: {school_name}")
     return jsonify({"success": True, "event_id": new_id})
 
 
 @bp.route("/api/events/<int:event_id>", methods=["PUT"])
+@login_required
 def api_update_event(event_id):
+    if session["user"].get("role") != "Admin":
+        return jsonify({"success": False, "message": "Admin access required"}), 403
     data = request.get_json(force=True)
     
     fields = []
@@ -132,7 +139,7 @@ def api_update_event(event_id):
         cur.execute(f"UPDATE Events SET {', '.join(fields)} WHERE event_id = %s", params)
         conn.commit()
         
-    log_audit(data.get("user_id", "admin"), "UPDATE_EVENT",
+    log_audit(session["user"]["username"], "UPDATE_EVENT",
               f"Updated event {event_id}")
     return jsonify({"success": True})
 
@@ -165,9 +172,10 @@ def api_active_events():
 
 
 @bp.route("/api/events/<int:event_id>/volunteer", methods=["POST"])
+@login_required
 def api_volunteer_join(event_id):
     data = request.get_json(force=True)
-    username = data.get("username", "")
+    username = session["user"]["username"]
     category = data.get("category", "")
     now = datetime.utcnow().isoformat()
     
@@ -212,9 +220,9 @@ def api_volunteer_join(event_id):
 
 
 @bp.route("/api/events/<int:event_id>/volunteer", methods=["DELETE"])
+@login_required
 def api_volunteer_leave(event_id):
-    data = request.get_json(force=True)
-    username = data.get("username", "")
+    username = session["user"]["username"]
     
     with get_db_conn() as conn:
         cur = conn.cursor()

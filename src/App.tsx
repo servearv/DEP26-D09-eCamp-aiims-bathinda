@@ -5,6 +5,7 @@ import SchoolDashboard from './SchoolDashboard';
 import OfflineBanner from './components/OfflineBanner';
 import UpdatePrompt from './components/UpdatePrompt';
 import { usePWAInstall } from './hooks/usePWAInstall';
+import { isSpecialistRole, getSpecialty, SpecialtyIcon } from './constants/specialties';
 import {
   Activity, Stethoscope, ActivitySquare,
   LogOut, ShieldCheck, Sun, Moon, School,
@@ -22,20 +23,14 @@ type User = {
   designation?: string;
 };
 
-// Specialist categories
-const SPECIALIST_ROLES = [
-  'Community_Medicine', 'Dental', 'ENT',
-  'Eye_Specialist', 'Skin_Specialist', 'Other',
-];
-
 function isSpecialist(role: string) {
-  return SPECIALIST_ROLES.includes(role);
+  return isSpecialistRole(role);
 }
 
 // --- Main App Component ---
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [needsPasswordSetup, setNeedsPasswordSetup] = useState(false);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'profile'>('dashboard');
@@ -203,7 +198,7 @@ export default function App() {
       {/* Main Content */}
       <main
         className={`relative flex flex-1 min-w-0 flex-col ${
-          isSpecialist(user.role) && activeTab === 'dashboard' ? 'min-h-0 overflow-hidden' : 'overflow-y-auto'
+          isSpecialist(user.role) && activeTab === 'dashboard' ? 'min-h-0 overflow-hidden' : 'overflow-y-auto overflow-x-hidden'
         }`}
       >
         {!(isSpecialist(user.role) && activeTab === 'dashboard') && (
@@ -228,7 +223,7 @@ export default function App() {
           className={`relative z-10 flex-1 min-w-0 ${
             isSpecialist(user.role) && activeTab === 'dashboard'
               ? 'flex min-h-0 flex-col overflow-hidden px-0 pb-0'
-              : 'px-8 pb-8'
+              : 'px-4 pb-4 md:px-8 md:pb-8'
           }`}
         >
           {activeTab === 'profile' ? (
@@ -247,26 +242,17 @@ export default function App() {
 }
 
 function formatRoleDisplay(role: string): string {
-  switch (role) {
-    case 'Community_Medicine': return 'Community Medicine';
-    case 'Eye_Specialist': return 'Ophthalmology';
-    case 'Skin_Specialist': return 'Dermatology';
-    case 'School POC': return 'School POC';
-    default: return role;
-  }
+  return getSpecialty(role)?.label ?? role;
 }
 
 function getRoleIcon(role: string) {
   switch (role) {
     case 'Admin': return <Activity className="w-5 h-5" />;
     case 'School POC': return <School className="w-5 h-5" />;
-    case 'Community_Medicine': return <HeartPulse className="w-5 h-5" />;
-    case 'Dental': return <span className="text-lg">🦷</span>;
-    case 'ENT': return <Ear className="w-5 h-5" />;
-    case 'Eye_Specialist': return <Eye className="w-5 h-5" />;
-    case 'Skin_Specialist': return <Scan className="w-5 h-5" />;
-    case 'Other': return <Stethoscope className="w-5 h-5" />;
-    default: return <Activity className="w-5 h-5" />;
+    default:
+      return isSpecialistRole(role)
+        ? <SpecialtyIcon specialty={role} className="w-5 h-5" />
+        : <Activity className="w-5 h-5" />;
   }
 }
 
