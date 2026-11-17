@@ -84,6 +84,22 @@ Migration scripts live in `migrations/versions/`.
 
 ---
 
+## Downloading Camp Data & Slips
+
+Both are read-only and need a logged-in session.
+
+| What | Where in the app | Who |
+|---|---|---|
+| **Excel** (sheets: *Students*, *Health Records*) or **CSV** (records) | Admin → Events → a camp → *Camp Records* → **Download Excel / CSV**; School → a camp → *Progress Tracking* | Admin; the school's own POC |
+| **Prescription & referral slips** (one A4 page per department visit) | Admin → *Students* tab → **Slips** per student or **Download all slips**; School → *Print all slips*; Doctor → **Print slip** in the exam form | Admin; own-school POC; specialists |
+
+Use the browser's print dialog → *Save as PDF* to keep slips as a file.
+The current class/section/sex filters apply to the data download.
+
+API: `GET /api/events/<id>/export` and `GET /api/events/<id>/slips[?student_id=&category=]`.
+
+---
+
 ## Database Backup & Restore
 
 ### Export

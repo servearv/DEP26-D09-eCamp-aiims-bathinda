@@ -9,12 +9,15 @@ import {
 import GeneralInfoForm from './GeneralInfoForm';
 import AnalyticsPanel from './components/AnalyticsCharts';
 import { AddStudentModal, CSVUploadPanel } from './components/StudentModals';
+import DownloadDataButton from './components/DownloadDataButton';
+import { printSlips, fetchSlips, openPrintWindow } from './lib/printSlip';
+import { specialtyLabel } from './constants/specialties';
 
 // Socket.IO client (optional)
 let io: any = null;
 try { io = require('socket.io-client'); } catch {}
 
-// â”€â”€ Types â”€â”€
+// ── Types ──
 type User = { username: string; role: string; name: string };
 
 interface EventData {
@@ -73,7 +76,7 @@ interface CampRequest {
   created_at: string;
 }
 
-// â”€â”€ Helpers â”€â”€
+// ── Helpers ──
 function formatDate(d: string): string {
   if (!d) return '';
   const dt = new Date(d);
@@ -119,9 +122,9 @@ function normalizeDateStr(raw: string): string {
   return raw;
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// â–ˆâ–ˆ SCHOOL DASHBOARD (Main Export)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════
+// ██ SCHOOL DASHBOARD (Main Export)
+// ════════════════════════════════════════
 export default function SchoolDashboard({ user }: { user: User }) {
   const [selectedEvent, setSelectedEvent] = useState<EventData | null>(null);
 
@@ -132,9 +135,9 @@ export default function SchoolDashboard({ user }: { user: User }) {
   return <EventWorkspace user={user} event={selectedEvent} onBack={() => setSelectedEvent(null)} />;
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// â–ˆâ–ˆ EVENT LIST (Homepage)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════
+// ██ EVENT LIST (Homepage)
+// ════════════════════════════════════════
 function SchoolEventList({ user, onSelect }: { user: User; onSelect: (e: EventData) => void }) {
   const [events, setEvents] = useState<EventData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -294,7 +297,7 @@ function SchoolEventList({ user, onSelect }: { user: User; onSelect: (e: EventDa
                       </div>
                       <div>
                         <p className="text-white font-semibold text-sm">
-                          Preferred: {req.preferred_date ? new Date(req.preferred_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : 'â€”'}
+                          Preferred: {req.preferred_date ? new Date(req.preferred_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
                         </p>
                         <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-400">
                           <span><Users className="w-3 h-3 inline mr-1" />{req.student_count} students</span>
@@ -338,8 +341,8 @@ function SchoolEventList({ user, onSelect }: { user: User; onSelect: (e: EventDa
                       <div>
                         <h3 className="text-white font-semibold text-lg group-hover:text-violet-300 transition-colors">{event.school_name}</h3>
                         <p className="text-sm text-slate-400 mt-0.5">
-                          {formatDate(event.start_date)}{event.end_date ? ` â†’ ${formatDate(event.end_date)}` : ''}
-                          {event.operational_hours ? ` Â· ${event.operational_hours}` : ''}
+                          {formatDate(event.start_date)}{event.end_date ? ` → ${formatDate(event.end_date)}` : ''}
+                          {event.operational_hours ? ` · ${event.operational_hours}` : ''}
                         </p>
                       </div>
                     </div>
@@ -376,9 +379,9 @@ function SchoolEventList({ user, onSelect }: { user: User; onSelect: (e: EventDa
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// â–ˆâ–ˆ EVENT WORKSPACE (dual option)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════
+// ██ EVENT WORKSPACE (dual option)
+// ════════════════════════════════════════
 function EventWorkspace({ user, event, onBack }: { user: User; event: EventData; onBack: () => void }) {
   const [activeView, setActiveView] = useState<'roster' | 'progress'>('roster');
 
@@ -394,7 +397,7 @@ function EventWorkspace({ user, event, onBack }: { user: User; event: EventData;
             <h2 className="text-2xl font-bold text-white tracking-tight">{event.school_name}</h2>
           </div>
           <p className="text-slate-400 text-sm mt-0.5">
-            {formatDate(event.start_date)}{event.end_date ? ` â†’ ${formatDate(event.end_date)}` : ''} Â· {event.operational_hours || 'TBD'}
+            {formatDate(event.start_date)}{event.end_date ? ` → ${formatDate(event.end_date)}` : ''} · {event.operational_hours || 'TBD'}
           </p>
         </div>
       </div>
@@ -425,76 +428,14 @@ function EventWorkspace({ user, event, onBack }: { user: User; event: EventData;
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// â–ˆâ–ˆ PRINTABLE DOCUMENT HELPERS
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-function buildDocumentBody(d: any, doctorInfo: any, studentInfo: any, campName: string, isReferral: boolean, specialty: string, today: string): string {
-  const studentName = studentInfo?.name || 'â€”';
-  const studentAge = studentInfo?.age || 'â€”';
-  const studentGender = studentInfo?.gender === 'M' ? 'Male' : studentInfo?.gender === 'F' ? 'Female' : 'â€”';
-  const studentClass = studentInfo?.student_class || 'â€”';
-  const studentSection = studentInfo?.section ? `-${studentInfo.section}` : '';
-  const fatherName = studentInfo?.father_name || 'â€”';
-  const phone = studentInfo?.phone || '';
-  const doctorName = doctorInfo?.name || doctorInfo?.username || 'â€”';
-  const docSpecialty = specialty || (doctorInfo?.role || '').replace(/_/g, ' ');
+// ════════════════════════════════════════
+// ██ PRINTABLE DOCUMENT HELPERS
+// ════════════════════════════════════════
+// Slip printing lives in src/lib/printSlip.ts (shared with doctor and admin views).
 
-  let html = `<div style="font-family:serif;color:#000;background:#fff;padding:40px;max-width:210mm;margin:0 auto;">`;
-  html += `<div style="text-align:center;border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:20px;">`;
-  html += `<h1 style="font-size:20px;font-weight:bold;margin:0;">AIIMS BATHINDA â€” SCHOOL HEALTH CAMP</h1>`;
-  if (campName) html += `<p style="font-size:12px;margin:4px 0 0;color:#555;">${campName}</p>`;
-  html += `</div>`;
-  html += `<div style="display:flex;justify-content:space-between;margin-bottom:16px;">`;
-  html += `<div><span style="display:inline-block;padding:4px 14px;border:2px solid #000;font-weight:bold;font-size:14px;text-transform:uppercase;border-radius:4px;">${isReferral ? 'REFERRAL SHEET' : 'PRESCRIPTION'}</span>`;
-  html += `<span style="margin-left:12px;font-size:13px;color:#555;">Department: ${docSpecialty}</span></div>`;
-  html += `<div style="font-size:13px;">Date: ${today}</div></div>`;
-  html += `<table style="width:100%;font-size:13px;margin-bottom:16px;border-collapse:collapse;"><tbody>`;
-  html += `<tr><td style="padding:3px 0;font-weight:bold;width:120px;">Student Name:</td><td>${studentName}</td><td style="font-weight:bold;width:60px;">Age:</td><td style="width:50px;">${studentAge}</td><td style="font-weight:bold;width:60px;">Sex:</td><td style="width:50px;">${studentGender}</td></tr>`;
-  html += `<tr><td style="padding:3px 0;font-weight:bold;">Class:</td><td>${studentClass}${studentSection}</td><td style="font-weight:bold;">Father:</td><td colspan="3">${fatherName}</td></tr>`;
-  const regNo = studentInfo?.registration_number || 'â€”';
-  html += `<tr><td style="padding:3px 0;font-weight:bold;">Reg No:</td><td>${regNo}</td><td style="font-weight:bold;">Contact:</td><td colspan="3">${phone || 'â€”'}</td></tr>`;
-  html += `</tbody></table>`;
-  html += `<div style="border-top:1px solid #ccc;padding-top:12px;margin-bottom:12px;"><h3 style="font-size:14px;font-weight:bold;margin:0 0 6px;">Clinical Findings</h3>`;
-  html += `<p style="font-size:13px;white-space:pre-wrap;">${d.clinicalFindings || 'â€”'}</p></div>`;
-
-  if (!isReferral) {
-    html += `<div style="border-top:1px solid #ccc;padding-top:12px;margin-bottom:12px;">`;
-    html += `<h3 style="font-size:14px;font-weight:bold;margin:0 0 6px;">Diagnosis</h3><p style="font-size:13px;">${d.diagnosis || 'â€”'}</p>`;
-    html += `<h3 style="font-size:14px;font-weight:bold;margin:12px 0 6px;">Prescription (Rx)</h3>`;
-    if ((d.medicines || []).length > 0) {
-      html += `<table style="width:100%;font-size:13px;border-collapse:collapse;"><thead><tr style="border-bottom:1px solid #999;">`;
-      html += `<th style="text-align:left;padding:4px;font-weight:bold;">#</th><th style="text-align:left;padding:4px;font-weight:bold;">Medicine</th><th style="text-align:left;padding:4px;font-weight:bold;">Dosage</th><th style="text-align:left;padding:4px;font-weight:bold;">Freq</th><th style="text-align:left;padding:4px;font-weight:bold;">Duration</th></tr></thead><tbody>`;
-      (d.medicines || []).forEach((m: any, i: number) => {
-        html += `<tr style="border-bottom:1px solid #eee;"><td style="padding:4px;">${i + 1}.</td><td style="padding:4px;">${m.name || 'â€”'}</td><td style="padding:4px;">${m.dosage || 'â€”'}</td><td style="padding:4px;">${m.frequency || 'â€”'}</td><td style="padding:4px;">${m.duration || 'â€”'}</td></tr>`;
-      });
-      html += `</tbody></table>`;
-    } else {
-      html += `<p style="font-size:13px;color:#999;">No medicines prescribed.</p>`;
-    }
-    if (d.advice) html += `<div style="margin-top:12px;"><h3 style="font-size:14px;font-weight:bold;margin:0 0 6px;">Advice</h3><p style="font-size:13px;white-space:pre-wrap;">${d.advice}</p></div>`;
-    html += `</div>`;
-  } else {
-    html += `<div style="border-top:1px solid #ccc;padding-top:12px;margin-bottom:12px;">`;
-    html += `<h3 style="font-size:14px;font-weight:bold;margin:0 0 6px;">Reason for Referral</h3>`;
-    html += `<p style="font-size:13px;white-space:pre-wrap;">${d.referralReason || 'â€”'}</p>`;
-    html += `<div style="display:flex;gap:40px;margin-top:10px;">`;
-    html += `<div><span style="font-weight:bold;font-size:13px;">Recommended Dept/Hospital: </span><span style="font-size:13px;">${d.referralDept || 'â€”'}</span></div>`;
-    html += `<div><span style="font-weight:bold;font-size:13px;">Urgency: </span><span style="font-size:13px;">${d.urgency || 'Routine'}</span></div></div></div>`;
-  }
-
-  html += `<div style="border-top:2px solid #000;padding-top:16px;margin-top:30px;display:flex;justify-content:space-between;">`;
-  html += `<div style="font-size:13px;"><p style="font-weight:bold;">${doctorName}</p><p style="color:#555;">${docSpecialty}</p></div>`;
-  html += `<div style="text-align:right;font-size:13px;"><p style="margin-top:30px;border-top:1px solid #000;padding-top:4px;">Signature</p></div></div></div>`;
-  return html;
-}
-
-function buildPrintableHTML(d: any, doctorInfo: any, studentInfo: any, campName: string, isReferral: boolean, specialty: string, today: string): string {
-  return `<html><head><title>Print Document</title><style>body{margin:0;padding:0;font-family:serif;}@page{size:A4;margin:15mm;}</style></head><body>${buildDocumentBody(d, doctorInfo, studentInfo, campName, isReferral, specialty, today)}</body></html>`;
-}
-
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// â–ˆâ–ˆ OPTION A: ROSTER MANAGEMENT
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════
+// ██ OPTION A: ROSTER MANAGEMENT
+// ════════════════════════════════════════
 function RosterManagement({ user, eventId, event }: { user: User; eventId: number; event: EventData }) {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
@@ -590,75 +531,36 @@ function RosterManagement({ user, eventId, event }: { user: User; eventId: numbe
     finally { setLoadingDocs(false); }
   };
 
-  // Print a single document
-  const handlePrintDoc = (record: any) => {
-    const d = record.parsed_data || {};
-    const isReferral = d.status === 'R';
-    const specialty = (record.category || '').replace(/_/g, ' ');
-    const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const s = viewingDocsStudent;
-    const html = buildPrintableHTML(d, { name: record.doctor_id, role: record.category }, s, '', isReferral, specialty, today);
-    const pw = window.open('', '_blank');
-    if (!pw) return;
-    pw.document.write(html);
-    pw.document.close();
-    pw.focus();
-    setTimeout(() => { pw.print(); pw.close(); }, 300);
-  };
-
-  // Helper: check if a parsed record has any meaningful prescription/referral content
-  const hasPrintableContent = (d: any): boolean => {
-    if (!d) return false;
-    const status = d.status;
-    // Only print Observation (O) or Referral (R) records
-    if (status !== 'O' && status !== 'R') return false;
-    if (status === 'R') {
-      // Referral needs at least a reason or dept
-      return !!(d.referralReason?.trim() || d.referralDept?.trim() || d.clinicalFindings?.trim());
+  // Print one department's slip (prescription + referral on one page)
+  const handlePrintDoc = async (record: any) => {
+    if (!viewingDocsStudent) return;
+    const win = openPrintWindow();
+    if (!win) return;
+    try {
+      const slips = await fetchSlips(eventId, { studentId: viewingDocsStudent.student_id, category: record.category });
+      if (!slips.length) { win.close(); alert('Nothing to print for this department.'); return; }
+      printSlips(slips, win);
+    } catch (e: any) {
+      win.close();
+      alert(e?.message || 'Could not load slip');
     }
-    // Observation/Prescription: needs at least one meaningful field
-    return !!(
-      d.clinicalFindings?.trim() ||
-      d.diagnosis?.trim() ||
-      d.advice?.trim() ||
-      (Array.isArray(d.medicines) && d.medicines.some((m: any) => m.name?.trim()))
-    );
   };
 
-  // Bulk print all docs
+  // Bulk print: one page per department slip, for every student in the camp
   const handleBulkPrint = async () => {
+    const win = openPrintWindow();
+    if (!win) return;
     setBulkPrinting(true);
     try {
-      const allDocs: { student: Student; record: any }[] = [];
-      for (const s of examinedStudentsList) {
-        const res = await fetch(`/api/students/${s.student_id}/all-records?event_id=${eventId}`);
-        const data = await res.json();
-        const docs = (data.records || []).filter((doc: any) => {
-          const parsed = doc.parsed_data || {};
-          return hasPrintableContent(parsed);
-        });
-        for (const doc of docs) {
-          allDocs.push({ student: data.student || s, record: doc });
-        }
-      }
-      if (allDocs.length === 0) { setBulkPrinting(false); alert('No prescriptions or referrals with content to print.'); return; }
-      const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      let fullHTML = '<html><head><title>Print All Documents</title><style>body{margin:0;padding:0;font-family:serif;}@page{size:A4;margin:15mm;}.page-break{page-break-after:always;}</style></head><body>';
-      allDocs.forEach((item, idx) => {
-        const d = item.record.parsed_data || {};
-        const isReferral = d.status === 'R';
-        const specialty = (item.record.category || '').replace(/_/g, ' ');
-        fullHTML += buildDocumentBody(d, { name: item.record.doctor_id, role: item.record.category }, item.student, '', isReferral, specialty, today);
-        if (idx < allDocs.length - 1) fullHTML += '<div class="page-break"></div>';
-      });
-      fullHTML += '</body></html>';
-      const pw = window.open('', '_blank');
-      if (!pw) { setBulkPrinting(false); return; }
-      pw.document.write(fullHTML);
-      pw.document.close();
-      pw.focus();
-      setTimeout(() => { pw.print(); pw.close(); setBulkPrinting(false); }, 300);
-    } catch { setBulkPrinting(false); }
+      const slips = await fetchSlips(eventId);
+      if (!slips.length) { win.close(); alert('No prescriptions or referrals with content to print.'); return; }
+      printSlips(slips, win);
+    } catch (e: any) {
+      win.close();
+      alert(e?.message || 'Could not load slips');
+    } finally {
+      setBulkPrinting(false);
+    }
   };
 
   // If editing a student's general info, show the form
@@ -740,7 +642,7 @@ function RosterManagement({ user, eventId, event }: { user: User; eventId: numbe
             {docCount > 0 && (
               <button onClick={handleBulkPrint} disabled={bulkPrinting}
                 className="flex-1 md:flex-none bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 px-5 py-3 rounded-xl font-bold transition-all flex items-center justify-center space-x-2 whitespace-nowrap text-sm disabled:opacity-50">
-                <Printer className="w-4 h-4" /><span>{bulkPrinting ? 'Loading...' : `Print Prescriptions (${docCount})`}</span>
+                <Printer className="w-4 h-4" /><span>{bulkPrinting ? 'Loading...' : 'Print all slips'}</span>
               </button>
             )}
           </div>
@@ -819,12 +721,12 @@ function RosterManagement({ user, eventId, event }: { user: User; eventId: numbe
 
                   return (
                     <tr key={s.student_id} className="hover:bg-slate-800/30 transition-colors">
-                      <td className="px-5 py-3 text-slate-300 text-xs">{s.registration_number || 'â€”'}</td>
+                      <td className="px-5 py-3 text-slate-300 text-xs">{s.registration_number || '—'}</td>
                       <td className="px-5 py-3 text-white font-medium">{s.name}</td>
-                      <td className="px-5 py-3 text-slate-300">{s.student_class || 'â€”'}{s.section ? `-${s.section}` : ''}</td>
-                      <td className="px-5 py-3 text-slate-300">{s.gender === 'M' ? 'Male' : s.gender === 'F' ? 'Female' : 'â€”'}</td>
-                      <td className="px-5 py-3 text-slate-300">{s.age || 'â€”'}</td>
-                      <td className="px-5 py-3 text-slate-300">{s.phone || 'â€”'}</td>
+                      <td className="px-5 py-3 text-slate-300">{s.student_class || '—'}{s.section ? `-${s.section}` : ''}</td>
+                      <td className="px-5 py-3 text-slate-300">{s.gender === 'M' ? 'Male' : s.gender === 'F' ? 'Female' : '—'}</td>
+                      <td className="px-5 py-3 text-slate-300">{s.age || '—'}</td>
+                      <td className="px-5 py-3 text-slate-300">{s.phone || '—'}</td>
                       <td className="px-5 py-3">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${statusStyle}`}>{statusLabel}</span>
                       </td>
@@ -872,7 +774,7 @@ function RosterManagement({ user, eventId, event }: { user: User; eventId: numbe
             <button onClick={() => setViewingDocsStudent(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             <h3 className="text-lg font-bold text-white mb-4 flex items-center">
               <FileText className="w-5 h-5 mr-2 text-amber-400" />
-              {viewingDocsStudent.name} â€” Documents
+              {viewingDocsStudent.name} — Documents
             </h3>
             {loadingDocs ? (
               <div className="text-center py-8 text-slate-400">Loading documents...</div>
@@ -883,15 +785,15 @@ function RosterManagement({ user, eventId, event }: { user: User; eventId: numbe
                 {studentDocs.map((rec: any, i: number) => {
                   const d = rec.parsed_data || {};
                   const isReferral = d.status === 'R';
-                  const specialty = (rec.category || '').replace(/_/g, ' ');
+                  const specialty = specialtyLabel(rec.category || '');
                   return (
                     <div key={i} className={`rounded-2xl p-4 border ${isReferral ? 'bg-red-500/5 border-red-500/20' : 'bg-amber-500/5 border-amber-500/20'}`}>
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center space-x-2">
                           <span className={`text-xs font-bold uppercase ${isReferral ? 'text-red-400' : 'text-amber-400'}`}>
-                            {isReferral ? 'ðŸ¥ Referral' : 'ðŸ“ Prescription'}
+                            {isReferral ? 'Prescription & Referral' : 'Prescription'}
                           </span>
-                          <span className="text-xs text-slate-500">â€” {specialty}</span>
+                          <span className="text-xs text-slate-500">— {specialty}</span>
                         </div>
                         <button onClick={() => handlePrintDoc(rec)}
                           className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
@@ -942,9 +844,9 @@ function RosterManagement({ user, eventId, event }: { user: User; eventId: numbe
 // AddStudentModal and CSVUploadPanel are now imported from './components/StudentModals'
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// â–ˆâ–ˆ OPTION B: PROGRESS TRACKING
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════
+// ██ OPTION B: PROGRESS TRACKING
+// ════════════════════════════════════════
 function ProgressTracking({ eventId }: { eventId: number }) {
   const [stats, setStats] = useState<EventStats | null>(null);
   const [expandedReferral, setExpandedReferral] = useState<number | null>(null);
@@ -1002,6 +904,9 @@ function ProgressTracking({ eventId }: { eventId: number }) {
             <button onClick={() => { setClassFilter(''); setSectionFilter(''); setGenderFilter(''); }}
               className="text-xs text-red-400 underline">Clear</button>
           )}
+          <div className="ml-auto">
+            <DownloadDataButton eventId={eventId} filters={{ student_class: classFilter, section: sectionFilter, gender: genderFilter }} />
+          </div>
         </div>
       </div>
 
@@ -1095,11 +1000,12 @@ function ProgressTracking({ eventId }: { eventId: number }) {
               </thead>
               <tbody className="divide-y divide-slate-800/50">
                 {stats.records.map((rec: any) => {
-                  let assessment = 'â€”';
+                  let assessment = '—';
                   let referralDepts: string[] = [];
                   try {
                     const d = JSON.parse(rec.json_data);
-                    assessment = d.assessment === 'N' ? 'Normal' : d.assessment === 'O' ? 'Observation' : d.assessment === 'R' ? 'Referred' : 'â€”';
+                    const st = d.status || d.assessment;
+                    assessment = st === 'N' ? 'Normal' : st === 'O' ? 'Observation' : st === 'R' ? 'Referred' : '—';
                     if (d.referralDepts) referralDepts = d.referralDepts;
                   } catch {}
 
@@ -1155,7 +1061,7 @@ function ProgressTracking({ eventId }: { eventId: number }) {
   );
 }
 
-// â”€â”€ Stat Card â”€â”€
+// ── Stat Card ──
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="bg-slate-900/80 backdrop-blur-xl p-4 rounded-2xl border border-slate-800 text-center shadow-xl">
@@ -1166,9 +1072,9 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 }
 
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// â–ˆâ–ˆ REQUEST CAMP MODAL
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════
+// ██ REQUEST CAMP MODAL
+// ════════════════════════════════════════
 function RequestCampModal({ user, onClose, onSubmitted }: {
   user: User;
   onClose: () => void;
@@ -1369,9 +1275,9 @@ function RequestCampModal({ user, onClose, onSubmitted }: {
   );
 }
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-// â–ˆâ–ˆ PREVIOUS RECORDS MODAL (cross-camp, school view)
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ════════════════════════════════════════
+// ██ PREVIOUS RECORDS MODAL (cross-camp, school view)
+// ════════════════════════════════════════
 function SchoolPreviousRecordsModal({ student, schoolId, eventId, onClose }: {
   student: Student; schoolId: number | null; eventId: number; onClose: () => void;
 }) {
@@ -1417,7 +1323,7 @@ function SchoolPreviousRecordsModal({ student, schoolId, eventId, onClose }: {
           Previous Camp Records
         </h3>
         <p className="text-xs text-slate-400 mb-4">
-          {student.name} Â· Reg: {student.registration_number || 'â€”'}
+          {student.name} · Reg: {student.registration_number || '—'}
         </p>
 
         {loading ? (
@@ -1448,7 +1354,7 @@ function SchoolPreviousRecordsModal({ student, schoolId, eventId, onClose }: {
                       <span className="text-sm font-bold text-white">{evt.school_name}</span>
                     </div>
                     <span className="text-xs text-slate-400">
-                      {fmtDate(evt.start_date)}{evt.end_date ? ` â†’ ${fmtDate(evt.end_date)}` : ''}
+                      {fmtDate(evt.start_date)}{evt.end_date ? ` → ${fmtDate(evt.end_date)}` : ''}
                     </span>
                   </div>
                   {evt.general_info && (evt.general_info.height || evt.general_info.weight) && (

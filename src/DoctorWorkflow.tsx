@@ -17,8 +17,13 @@ import {
   ENT_THROAT_COMPLAINTS,
   OPHTHALMOLOGY_COMPLAINTS,
   DERMATOLOGY_COMPLAINTS,
+  PEDIATRIC_COMPLAINTS,
+  OBGYN_COMPLAINTS,
 } from './components/complaints/ComplaintTypes';
 import type { ChiefComplaint } from './components/complaints/ComplaintTypes';
+import { bpWarning, pulseWarning, formatBP } from './lib/vitals';
+import { SPECIALTIES, getSpecialty, specialtyAppliesTo, SpecialtyIcon } from './constants/specialties';
+import { printSlips, openPrintWindow } from './lib/printSlip';
 
 // Socket.IO client (optional)
 let io: any = null;
@@ -40,13 +45,7 @@ const BLOOD_GROUPS = ['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const CLASSES = ['', 'Nursery', 'LKG', 'UKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
 const SECTIONS = ['', 'A', 'B', 'C', 'D', 'E'];
 
-const DOMAIN_TAGS = [
-  { key: 'Community_Medicine', short: 'CM', color: 'bg-rose-500' },
-  { key: 'Dental', short: 'Dental', color: 'bg-sky-500' },
-  { key: 'ENT', short: 'ENT', color: 'bg-amber-500' },
-  { key: 'Eye_Specialist', short: 'Ophthal', color: 'bg-emerald-500' },
-  { key: 'Skin_Specialist', short: 'Derm', color: 'bg-violet-500' },
-];
+const DOMAIN_TAGS = SPECIALTIES.map(s => ({ key: s.key, short: s.short, color: s.tagColor }));
 
 const SYMPTOM_CHECKLIST = [
   'Child rubs eyes frequently',
@@ -199,11 +198,11 @@ function SectionCard({ title, icon, children, defaultOpen = true }: {
   );
 }
 
-function DomainProgressBar({ examinedCategories }: { examinedCategories?: string }) {
+function DomainProgressBar({ examinedCategories, gender }: { examinedCategories?: string; gender?: string }) {
   const done = new Set((examinedCategories || '').split(',').filter(Boolean));
   return (
     <div className="flex flex-wrap items-center gap-1">
-      {DOMAIN_TAGS.map(d => {
+      {DOMAIN_TAGS.filter(d => specialtyAppliesTo(d.key, gender)).map(d => {
         const isDone = done.has(d.key) || done.has('FullExam');
         return (
           <span
@@ -945,6 +944,211 @@ function SkinExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campN
   );
 }
 
+// --- Small selection helpers used by the Paediatrics / OBGYN forms ---
+function ChoiceRow({ label, options, value, onSelect, disabled }: {
+  label: string; options: string[]; value?: string; onSelect: (v: string) => void; disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className={cls.label}>{label}</label>
+      <div className="flex flex-wrap gap-2">
+        {options.map(o => (
+          <button key={o} type="button" disabled={disabled} onClick={() => !disabled && onSelect(value === o ? '' : o)}
+            className={`min-h-[40px] rounded-lg border px-3 py-2 text-sm font-semibold transition-all disabled:opacity-50 ${value === o ? 'border-[#2563EB] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'}`}>
+            {o}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ChipList({ label, options, value, onChange, disabled }: {
+  label: string; options: string[]; value?: string[]; onChange: (v: string[]) => void; disabled?: boolean;
+}) {
+  const sel = Array.isArray(value) ? value : [];
+  return (
+    <div>
+      <label className={cls.label}>{label}</label>
+      <div className="flex flex-wrap gap-2">
+        {options.map(o => {
+          const active = sel.includes(o);
+          return (
+            <button key={o} type="button" disabled={disabled}
+              onClick={() => !disabled && onChange(active ? sel.filter(x => x !== o) : [...sel, o])}
+              className={`min-h-[40px] rounded-lg border px-3 py-2 text-sm font-medium transition-all disabled:opacity-50 ${active ? 'border-[#BFDBFE] bg-[#EFF6FF] text-[#1D4ED8]' : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'}`}>
+              {active && <Check className="w-3 h-3 inline mr-1" />}{o}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SystemsExam({ data, onChange, disabled }: { data: any; onChange: (d: any) => void; disabled?: boolean }) {
+  const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  const SYSTEMS = [
+    { key: 'respiratory', label: 'Respiratory System' },
+    { key: 'cardiovascular', label: 'Cardiovascular System' },
+    { key: 'abdomen', label: 'Abdomen' },
+    { key: 'cns', label: 'Central Nervous System' },
+  ];
+  return (
+    <div className="space-y-3">
+      {SYSTEMS.map(sys => (
+        <div key={sys.key}>
+          <label className={cls.label}>{sys.label}</label>
+          <div className="flex space-x-2">
+            {['NAD', 'Abnormal'].map(o => (
+              <button key={o} type="button" onClick={() => !disabled && u(sys.key, data[sys.key] === o ? '' : o)} disabled={disabled}
+                className={`min-h-[40px] rounded-lg border px-4 py-2 text-sm font-semibold transition-all ${data[sys.key] === o ? (o === 'NAD' ? 'border-[#BBF7D0] bg-[#F0FDF4] text-[#166534]' : 'border-[#FECACA] bg-[#FEF2F2] text-[#B91C1C]') : 'border-[#E5E7EB] bg-white text-[#6B7280] hover:border-[#D1D5DB]'} disabled:opacity-50`}>{o}</button>
+            ))}
+            {data[sys.key] === 'Abnormal' && (
+              <input value={data[`${sys.key}Detail`] || ''} onChange={e => u(`${sys.key}Detail`, e.target.value)} disabled={disabled}
+                placeholder="Specify..." className={`flex-1 ${cls.input}`} />
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ComplaintsBlock({ field, title, complaints, data, onChange, disabled }: {
+  field: string; title: string; complaints: readonly string[]; data: any; onChange: (d: any) => void; disabled?: boolean;
+}) {
+  const block = data[field] || { complaints: [], otherComplaint: '' };
+  const upd = (k: string, v: any) => onChange({ ...data, [field]: { ...block, [k]: v } });
+  return (
+    <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+      <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+        <ClipboardList className="h-4 w-4 text-[#2563EB]" />
+        <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Chief Complaints</h3>
+      </div>
+      <ComplaintSelector title={title} complaints={complaints} selected={block.complaints || []}
+        onChange={sel => upd('complaints', sel)} disabled={disabled} />
+      <OtherComplaintInput value={block.otherComplaint || ''} onChange={v => upd('otherComplaint', v)} disabled={disabled}
+        label="Other Complaints" placeholder="Describe any other complaints not listed above..." />
+    </div>
+  );
+}
+
+// --- Paediatrics Form ---
+function PediatricsExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
+  const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  return (
+    <div className="space-y-6">
+      <SectionHeading title="Paediatric Examination" icon={<SpecialtyIcon specialty="Pediatrics" className="w-4 h-4" />} />
+
+      <ComplaintsBlock field="pedComplaints" title="Select presenting complaints" complaints={PEDIATRIC_COMPLAINTS}
+        data={data} onChange={onChange} disabled={disabled} />
+
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Activity className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Growth, Nutrition & Vitals</h3>
+        </div>
+        <p className="text-xs text-[#6B7280]">Height, weight and BMI entered by the school are shown in the general info above.</p>
+        <ChipList label="Growth & nutrition" options={['Normal growth', 'Underweight', 'Stunting', 'Wasting', 'Overweight', 'Obese']}
+          value={data.growthFlags} onChange={v => u('growthFlags', v)} disabled={disabled} />
+        <ChipList label="Signs of deficiency" options={['Pallor', "Bitot's spots", 'Angular stomatitis', 'Rickets', 'Goitre', 'Dental fluorosis', 'None']}
+          value={data.deficiencySigns} onChange={v => u('deficiencySigns', v)} disabled={disabled} />
+        <VitalsInputs data={data} onChange={onChange} disabled={disabled} />
+      </div>
+
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <HeartPulse className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Systemic Examination</h3>
+        </div>
+        <SystemsExam data={data} onChange={onChange} disabled={disabled} />
+        <FormInput label="Developmental / behavioural concerns" value={data.developmentalConcerns || ''} onChange={v => u('developmentalConcerns', v)}
+          id="ped-dev" placeholder='e.g. "Speech delay, attention difficulty" or leave blank' disabled={disabled} />
+        <ChoiceRow label="Immunisation status" options={['Up to date', 'Incomplete', 'Unknown']}
+          value={data.immunisation} onSelect={v => u('immunisation', v)} disabled={disabled} />
+      </div>
+
+      <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
+    </div>
+  );
+}
+
+// --- Obstetrics & Gynaecology Form (female students only) ---
+function OBGYNExamForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
+  const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  return (
+    <div className="space-y-6">
+      <SectionHeading title="Obstetrics & Gynaecology Examination" icon={<SpecialtyIcon specialty="OBGYN" className="w-4 h-4" />} />
+
+      <ComplaintsBlock field="obgComplaints" title="Select presenting complaints" complaints={OBGYN_COMPLAINTS}
+        data={data} onChange={onChange} disabled={disabled} />
+
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <Calendar className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">Menstrual History</h3>
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <ChoiceRow label="Menarche attained" options={['Yes', 'No']} value={data.menarche} onSelect={v => u('menarche', v)} disabled={disabled} />
+          {data.menarche === 'Yes' && (
+            <FormInput label="Age at menarche (years)" type="number" value={data.menarcheAge || ''} onChange={v => u('menarcheAge', v)} id="obg-menarche-age" placeholder="e.g. 12" disabled={disabled} />
+          )}
+        </div>
+        {data.menarche === 'Yes' && (
+          <>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <ChoiceRow label="Cycles" options={['Regular', 'Irregular']} value={data.cycleRegularity} onSelect={v => u('cycleRegularity', v)} disabled={disabled} />
+              <FormInput label="Cycle length (days)" type="number" value={data.cycleLength || ''} onChange={v => u('cycleLength', v)} id="obg-cycle" placeholder="e.g. 28" disabled={disabled} />
+              <FormInput label="Flow duration (days)" type="number" value={data.flowDays || ''} onChange={v => u('flowDays', v)} id="obg-flow" placeholder="e.g. 5" disabled={disabled} />
+            </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <ChoiceRow label="Dysmenorrhoea" options={['Yes', 'No']} value={data.dysmenorrhoea} onSelect={v => u('dysmenorrhoea', v)} disabled={disabled} />
+              <ChoiceRow label="Heavy bleeding" options={['Yes', 'No']} value={data.heavyBleeding} onSelect={v => u('heavyBleeding', v)} disabled={disabled} />
+              <ChoiceRow label="Abnormal discharge" options={['Yes', 'No']} value={data.abnormalDischarge} onSelect={v => u('abnormalDischarge', v)} disabled={disabled} />
+            </div>
+            <ChoiceRow label="Menstrual hygiene practice" options={['Sanitary pad', 'Cloth', 'Menstrual cup', 'Other']}
+              value={data.hygienePractice} onSelect={v => u('hygienePractice', v)} disabled={disabled} />
+          </>
+        )}
+      </div>
+
+      <div className="space-y-5 rounded-lg border border-[#E5E7EB] bg-white p-5">
+        <div className="flex items-center space-x-2 border-b border-[#E5E7EB] pb-3">
+          <HeartPulse className="h-4 w-4 text-[#2563EB]" />
+          <h3 className="text-sm font-bold uppercase tracking-wider text-[#374151]">General Examination & Counselling</h3>
+        </div>
+        <ChoiceRow label="Signs of anaemia" options={['No', 'Pallor', 'Severe pallor']} value={data.anaemia} onSelect={v => u('anaemia', v)} disabled={disabled} />
+        <ChipList label="Counselling given" options={['Menstrual hygiene', 'Nutrition / iron intake', 'Personal hygiene', 'Other']}
+          value={data.counselling} onChange={v => u('counselling', v)} disabled={disabled} />
+      </div>
+
+      <StatusAndRemarks data={data} onChange={onChange} disabled={disabled} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
+    </div>
+  );
+}
+
+// --- Shared vitals (BP / pulse) inputs ---
+function VitalsInputs({ data, onChange, disabled }: { data: any; onChange: (d: any) => void; disabled?: boolean }) {
+  const u = (k: string, v: any) => onChange({ ...data, [k]: v });
+  const bpWarn = bpWarning(data.bpSystolic || '', data.bpDiastolic || '');
+  const pWarn = pulseWarning(data.pulse || '');
+  return (
+    <div>
+      <div className="grid grid-cols-3 gap-4">
+        <FormInput label="BP Systolic (mmHg)" type="number" value={data.bpSystolic || ''} onChange={v => u('bpSystolic', v)} id="vit-bp-sys" placeholder="e.g. 110" disabled={disabled} />
+        <FormInput label="BP Diastolic (mmHg)" type="number" value={data.bpDiastolic || ''} onChange={v => u('bpDiastolic', v)} id="vit-bp-dia" placeholder="e.g. 70" disabled={disabled} />
+        <FormInput label="Pulse (/min)" type="number" value={data.pulse || ''} onChange={v => u('pulse', v)} id="vit-pulse" placeholder="e.g. 88" disabled={disabled} />
+      </div>
+      {(bpWarn || pWarn) && (
+        <p className="mt-1.5 flex items-center gap-1 text-xs text-[#B45309]">
+          <AlertTriangle className="h-3.5 w-3.5" />{bpWarn || pWarn}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // --- Community Medicine Form ---
 function CommunityMedForm({ data, onChange, disabled, doctorInfo, studentInfo, campName }: { data: any; onChange: (d: any) => void; disabled?: boolean; doctorInfo?: any; studentInfo?: any; campName?: string }) {
   const u = (k: string, v: any) => onChange({ ...data, [k]: v });
@@ -1016,13 +1220,14 @@ function CommunityMedForm({ data, onChange, disabled, doctorInfo, studentInfo, c
         </div>
       </div>
 
-      {/* Present Complaint & Medication */}
+      {/* General Physical Examination */}
       <div className="space-y-5 mt-6">
-        <SectionHeading title="Present Complaint & Medication" icon={<Stethoscope className="w-4 h-4" />} />
+        <SectionHeading title="General Physical Examination" icon={<Stethoscope className="w-4 h-4" />} />
         <div className="grid grid-cols-2 gap-4">
           <FormInput label="Present Complaint" value={data.presentComplaint || ''} onChange={v => u('presentComplaint', v)} id="cm-complaint" placeholder='e.g. "White crusting on scalp"' disabled={disabled} />
           <FormInput label="Current Medication" value={data.currentMedication || ''} onChange={v => u('currentMedication', v)} id="cm-med" placeholder='e.g. "Medicated shampoo"' disabled={disabled} />
         </div>
+        <VitalsInputs data={data} onChange={onChange} disabled={disabled} />
         <div>
           <label className={cls.label}>General Appearance: Anaemia</label>
           <div className="flex space-x-2">
@@ -1069,94 +1274,6 @@ function CommunityMedForm({ data, onChange, disabled, doctorInfo, studentInfo, c
 // --- Shared Status + Prescription/Referral component ---
 const FREQUENCIES = ['OD', 'BD', 'TDS', 'QID', 'SOS', 'HS'];
 
-function PrintableDocument({ data, doctorInfo, studentInfo, campName }: { data: any; doctorInfo?: any; studentInfo?: any; campName?: string }) {
-  const isReferral = data.status === 'R';
-  const today = new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  const specialty = (doctorInfo?.role || '').replace(/_/g, ' ');
-  return (
-    <div className="printable-document" style={{ fontFamily: 'serif', color: '#000', background: '#fff', padding: '40px', maxWidth: '210mm', margin: '0 auto' }}>
-      <div style={{ textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: '12px', marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '20px', fontWeight: 'bold', margin: 0 }}>AIIMS BATHINDA — SCHOOL HEALTH CAMP</h1>
-        <p style={{ fontSize: '12px', margin: '4px 0 0', color: '#555' }}>{campName || ''}</p>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <div>
-          <span style={{ display: 'inline-block', padding: '4px 14px', border: '2px solid #000', fontWeight: 'bold', fontSize: '14px', textTransform: 'uppercase', borderRadius: '4px' }}>
-            {isReferral ? 'REFERRAL SHEET' : 'PRESCRIPTION'}
-          </span>
-          <span style={{ marginLeft: '12px', fontSize: '13px', color: '#555' }}>Department: {specialty}</span>
-        </div>
-        <div style={{ fontSize: '13px' }}>Date: {today}</div>
-      </div>
-      <table style={{ width: '100%', fontSize: '13px', marginBottom: '16px', borderCollapse: 'collapse' }}>
-        <tbody>
-          <tr><td style={{ padding: '3px 0', fontWeight: 'bold', width: '120px' }}>Student Name:</td><td>{studentInfo?.name || '—'}</td><td style={{ fontWeight: 'bold', width: '60px' }}>Age:</td><td style={{ width: '50px' }}>{studentInfo?.age || '—'}</td><td style={{ fontWeight: 'bold', width: '60px' }}>Sex:</td><td style={{ width: '50px' }}>{studentInfo?.gender === 'M' ? 'Male' : studentInfo?.gender === 'F' ? 'Female' : '—'}</td></tr>
-          <tr><td style={{ padding: '3px 0', fontWeight: 'bold' }}>Class:</td><td>{studentInfo?.student_class || '—'}{studentInfo?.section ? `-${studentInfo.section}` : ''}</td><td style={{ fontWeight: 'bold' }}>Father:</td><td colSpan={3}>{studentInfo?.father_name || '—'}</td></tr>
-          {studentInfo?.phone && <tr><td style={{ padding: '3px 0', fontWeight: 'bold' }}>Reg No:</td><td>{studentInfo?.registration_number || '—'}</td><td style={{ fontWeight: 'bold' }}>Contact:</td><td colSpan={3}>{studentInfo?.phone || '—'}</td></tr>}
-        </tbody>
-      </table>
-      <div style={{ borderTop: '1px solid #ccc', paddingTop: '12px', marginBottom: '12px' }}>
-        <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 6px' }}>Clinical Findings</h3>
-        <p style={{ fontSize: '13px', whiteSpace: 'pre-wrap' }}>{data.clinicalFindings || '—'}</p>
-      </div>
-      {!isReferral && (
-        <div style={{ borderTop: '1px solid #ccc', paddingTop: '12px', marginBottom: '12px' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 6px' }}>Diagnosis</h3>
-          <p style={{ fontSize: '13px' }}>{data.diagnosis || '—'}</p>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: '12px 0 6px' }}>Prescription (Rx)</h3>
-          {(data.medicines || []).length > 0 ? (
-            <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ borderBottom: '1px solid #999' }}>
-                <th style={{ textAlign: 'left', padding: '4px', fontWeight: 'bold' }}>#</th>
-                <th style={{ textAlign: 'left', padding: '4px', fontWeight: 'bold' }}>Medicine</th>
-                <th style={{ textAlign: 'left', padding: '4px', fontWeight: 'bold' }}>Dosage</th>
-                <th style={{ textAlign: 'left', padding: '4px', fontWeight: 'bold' }}>Freq</th>
-                <th style={{ textAlign: 'left', padding: '4px', fontWeight: 'bold' }}>Duration</th>
-              </tr></thead>
-              <tbody>
-                {(data.medicines || []).map((m: any, i: number) => (
-                  <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                    <td style={{ padding: '4px' }}>{i + 1}.</td>
-                    <td style={{ padding: '4px' }}>{m.name || '—'}</td>
-                    <td style={{ padding: '4px' }}>{m.dosage || '—'}</td>
-                    <td style={{ padding: '4px' }}>{m.frequency || '—'}</td>
-                    <td style={{ padding: '4px' }}>{m.duration || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : <p style={{ fontSize: '13px', color: '#999' }}>No medicines prescribed.</p>}
-          {data.advice && (
-            <div style={{ marginTop: '12px' }}>
-              <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 6px' }}>Advice</h3>
-              <p style={{ fontSize: '13px', whiteSpace: 'pre-wrap' }}>{data.advice}</p>
-            </div>
-          )}
-        </div>
-      )}
-      {isReferral && (
-        <div style={{ borderTop: '1px solid #ccc', paddingTop: '12px', marginBottom: '12px' }}>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', margin: '0 0 6px' }}>Reason for Referral</h3>
-          <p style={{ fontSize: '13px', whiteSpace: 'pre-wrap' }}>{data.referralReason || '—'}</p>
-          <div style={{ display: 'flex', gap: '40px', marginTop: '10px' }}>
-            <div><span style={{ fontWeight: 'bold', fontSize: '13px' }}>Recommended Dept/Hospital: </span><span style={{ fontSize: '13px' }}>{data.referralDept || '—'}</span></div>
-            <div><span style={{ fontWeight: 'bold', fontSize: '13px' }}>Urgency: </span><span style={{ fontSize: '13px' }}>{data.urgency || 'Routine'}</span></div>
-          </div>
-        </div>
-      )}
-      <div style={{ borderTop: '2px solid #000', paddingTop: '16px', marginTop: '30px', display: 'flex', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: '13px' }}>
-          <p style={{ fontWeight: 'bold' }}>{doctorInfo?.name || doctorInfo?.username || '—'}</p>
-          <p style={{ color: '#555' }}>{specialty}</p>
-        </div>
-        <div style={{ textAlign: 'right', fontSize: '13px' }}>
-          <p style={{ marginTop: '30px', borderTop: '1px solid #000', paddingTop: '4px' }}>Signature</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, campName }: {
   data: any; onChange: (d: any) => void; disabled?: boolean;
   doctorInfo?: any; studentInfo?: any; campName?: string;
@@ -1165,7 +1282,6 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
   const statusIsNormal = data.status === 'N';
   const isObservation = data.status === 'O';
   const isReferred = data.status === 'R';
-  const printRef = useRef<HTMLDivElement>(null);
 
   const addMedicine = () => {
     const meds = data.medicines || [];
@@ -1182,17 +1298,31 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
     onChange({ ...data, medicines: meds });
   };
 
-  const handlePrint = () => {
-    const printContent = printRef.current;
-    if (!printContent) return;
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-    printWindow.document.write(`<html><head><title>Print Document</title><style>body{margin:0;padding:0;font-family:serif;}@page{size:A4;margin:15mm;}</style></head><body>`);
-    printWindow.document.write(printContent.innerHTML);
-    printWindow.document.write('</body></html>');
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
+  // Prints this department's slip from the data on screen (works offline);
+  // height/weight/BMI are added when the server is reachable.
+  const handlePrint = async () => {
+    const win = openPrintWindow();
+    if (!win) return;
+    let generalInfo: any = null;
+    const sid = studentInfo?.student_id;
+    const eid = studentInfo?.event_id;
+    if (sid && eid && navigator.onLine) {
+      try {
+        const res = await fetch(`/api/students/${sid}/general-info?event_id=${eid}`);
+        if (res.ok) generalInfo = await res.json();
+      } catch { /* offline — print without vitals */ }
+    }
+    printSlips([{
+      student: studentInfo || {},
+      generalInfo,
+      record: {
+        category: doctorInfo?.role || '',
+        doctor_id: doctorInfo?.username,
+        doctor_name: doctorInfo?.name,
+        parsed_data: data,
+      },
+      campName,
+    }], win);
   };
 
   return (
@@ -1219,8 +1349,8 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
         <p className="py-2 text-sm text-[#6B7280]">No prescription or referral for a normal assessment.</p>
       )}
 
-      {/* Observation — Prescription form */}
-      {isObservation && !disabled && (
+      {/* Observation or Referral — Prescription form (a referred child can still be prescribed) */}
+      {(isObservation || isReferred) && !disabled && (
         <div className="space-y-5 rounded-lg border border-[#FDE68A] bg-[#FFFBEB] p-6">
           <div className="flex items-center gap-2 border-b border-[#FDE68A] pb-3">
             <FileText className="h-4 w-4 text-[#B45309]" />
@@ -1299,12 +1429,6 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
               rows={3} placeholder="Follow-up, precautions…"
               className={cls.textarea} />
           </div>
-          <div className="flex justify-end border-t border-[#FDE68A] pt-4">
-            <button type="button" onClick={handlePrint}
-              className="inline-flex items-center gap-2 rounded-lg border border-[#F59E0B] bg-white px-4 py-2.5 text-sm font-semibold text-[#B45309] transition-colors hover:bg-[#FFFBEB]">
-              <Printer className="h-4 w-4" /><span>Print prescription</span>
-            </button>
-          </div>
         </div>
       )}
 
@@ -1314,17 +1438,6 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
           <div className="flex items-center gap-2 border-b border-[#FECACA] pb-3">
             <FileText className="h-4 w-4 text-[#B91C1C]" />
             <span className="text-xs font-semibold uppercase tracking-wider text-[#991B1B]">Referral</span>
-          </div>
-          {/* Auto-filled info */}
-          <div className="grid grid-cols-2 gap-4 text-xs text-[#6B7280]">
-            <div><span className="text-[#9CA3AF]">Referring </span>{doctorInfo?.name || doctorInfo?.username || '—'} · {(doctorInfo?.role || '').replace(/_/g, ' ')}</div>
-            <div><span className="text-[#9CA3AF]">Date </span>{new Date().toLocaleDateString('en-IN')}</div>
-          </div>
-          <div>
-            <label className={cls.label}>Clinical Findings</label>
-            <textarea value={data.clinicalFindings || ''} onChange={e => u('clinicalFindings', e.target.value)}
-              rows={2} placeholder="Summarize clinical findings..."
-              className={cls.textarea} />
           </div>
           <div>
             <label className={cls.label}>Reason for Referral</label>
@@ -1354,12 +1467,17 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
               ))}
             </div>
           </div>
-          <div className="flex justify-end border-t border-[#FECACA] pt-4">
-            <button type="button" onClick={handlePrint}
-              className="inline-flex items-center gap-2 rounded-lg border border-[#DC2626] bg-white px-4 py-2.5 text-sm font-semibold text-[#B91C1C] transition-colors hover:bg-[#FEF2F2]">
-              <Printer className="h-4 w-4" /><span>Print referral</span>
-            </button>
-          </div>
+        </div>
+      )}
+
+      {/* One slip per department: prescription + referral on the same page */}
+      {(isObservation || isReferred) && !disabled && (
+        <div className="flex justify-end">
+          <button type="button" onClick={handlePrint}
+            className="inline-flex items-center gap-2 rounded-lg border border-[#2563EB] bg-white px-4 py-2.5 text-sm font-semibold text-[#1D4ED8] transition-colors hover:bg-[#EFF6FF]">
+            <Printer className="h-4 w-4" />
+            <span>{isReferred ? 'Print prescription & referral slip' : 'Print prescription slip'}</span>
+          </button>
         </div>
       )}
 
@@ -1367,7 +1485,7 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
       {(isObservation || isReferred) && disabled && (
         <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
           <span className={`text-xs font-bold uppercase ${isObservation ? 'text-amber-600' : 'text-red-600'}`}>
-            {isObservation ? '📝 Prescription' : '🏥 Referral Sheet'}
+            {isObservation ? '📝 Prescription' : '🏥 Prescription & Referral'}
           </span>
           {data.clinicalFindings && <p className="text-xs text-gray-600"><span className="text-gray-400">Findings:</span> {data.clinicalFindings}</p>}
           {data.diagnosis && <p className="text-xs text-gray-600"><span className="text-gray-400">Dx:</span> {data.diagnosis}</p>}
@@ -1385,11 +1503,6 @@ function StatusAndRemarks({ data, onChange, disabled, doctorInfo, studentInfo, c
           {data.advice && <p className="text-xs text-gray-600"><span className="text-gray-400">Advice:</span> {data.advice}</p>}
         </div>
       )}
-
-      {/* Hidden printable document */}
-      <div ref={printRef} style={{ display: 'none' }}>
-        <PrintableDocument data={data} doctorInfo={doctorInfo} studentInfo={studentInfo} campName={campName} />
-      </div>
     </div>
   );
 }
@@ -1743,6 +1856,14 @@ function CommunityMedRecordCard({ d }: { d: any }) {
         </div>
       )}
 
+      {/* BP / Pulse */}
+      {(formatBP(d) || d.pulse) && (
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          {formatBP(d) && <span><span className="text-gray-400">BP:</span> <span className="font-bold text-gray-700">{formatBP(d)}</span></span>}
+          {d.pulse && <span><span className="text-gray-400">Pulse:</span> <span className="font-bold text-gray-700">{d.pulse} /min</span></span>}
+        </div>
+      )}
+
       {/* Anaemia */}
       {d.anaemia && (
         <div className="flex items-center space-x-2">
@@ -1781,6 +1902,82 @@ function CommunityMedRecordCard({ d }: { d: any }) {
   );
 }
 
+function ComplaintChips({ block, tone }: { block: any; tone: string }) {
+  const list: string[] = Array.isArray(block?.complaints) ? block.complaints : [];
+  if (!list.length && !block?.otherComplaint) return null;
+  return (
+    <div className={`rounded-lg border px-3 py-2 ${tone}`}>
+      <span className="block mb-1.5 text-[10px] uppercase tracking-wider opacity-80">Chief Complaints</span>
+      {list.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-1">
+          {list.map(c => <span key={c} className="rounded-md bg-white/70 px-2 py-0.5 text-[10px] font-medium">{c}</span>)}
+        </div>
+      )}
+      {block?.otherComplaint && <p className="mt-1 text-xs"><span className="font-semibold">Other:</span> {block.otherComplaint}</p>}
+    </div>
+  );
+}
+
+function SystemsSummary({ d }: { d: any }) {
+  const rows = ['respiratory', 'cardiovascular', 'abdomen', 'cns'].filter(k => d[k]);
+  if (!rows.length) return null;
+  const LABEL: Record<string, string> = { respiratory: 'Respiratory', cardiovascular: 'Cardiovascular', abdomen: 'Abdomen', cns: 'CNS' };
+  return (
+    <div className="bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+      <span className="text-[10px] text-gray-500 uppercase tracking-wider block mb-1.5">Systemic</span>
+      {rows.map(k => (
+        <div key={k} className="flex items-center justify-between py-0.5 text-xs">
+          <span className="text-gray-500 font-medium">{LABEL[k]}</span>
+          <span className={`font-bold px-2 py-0.5 rounded border ${d[k] === 'NAD' ? 'text-green-700 bg-green-50 border-green-200' : 'text-red-700 bg-red-50 border-red-200'}`}>
+            {d[k] === 'Abnormal' && d[`${k}Detail`] ? `Abnormal: ${d[`${k}Detail`]}` : d[k]}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PediatricsRecordCard({ d }: { d: any }) {
+  return (
+    <div className="space-y-2">
+      <ComplaintChips block={d.pedComplaints} tone="bg-teal-50 border-teal-100 text-teal-800" />
+      <div className="grid grid-cols-2 gap-2">
+        <RecordField label="Growth" value={(d.growthFlags || []).join(', ')} />
+        <RecordField label="Deficiency signs" value={(d.deficiencySigns || []).join(', ')} />
+        <RecordField label="BP / Pulse" value={[formatBP(d), d.pulse ? `${d.pulse} /min` : ''].filter(Boolean).join(' · ')} />
+        <RecordField label="Immunisation" value={d.immunisation} />
+      </div>
+      <SystemsSummary d={d} />
+      <RecordField label="Developmental / behavioural" value={d.developmentalConcerns} />
+      <RemarksBlock data={d} />
+    </div>
+  );
+}
+
+function OBGYNRecordCard({ d }: { d: any }) {
+  const flags = [
+    d.dysmenorrhoea === 'Yes' && 'Dysmenorrhoea',
+    d.heavyBleeding === 'Yes' && 'Heavy bleeding',
+    d.abnormalDischarge === 'Yes' && 'Abnormal discharge',
+  ].filter(Boolean).join(', ');
+  const menarche = d.menarche === 'Yes' ? `Yes${d.menarcheAge ? ` (age ${d.menarcheAge})` : ''}` : d.menarche;
+  const cycles = [d.cycleRegularity, d.cycleLength && `${d.cycleLength}-day cycle`, d.flowDays && `${d.flowDays}-day flow`].filter(Boolean).join(', ');
+  return (
+    <div className="space-y-2">
+      <ComplaintChips block={d.obgComplaints} tone="bg-pink-50 border-pink-100 text-pink-800" />
+      <div className="grid grid-cols-2 gap-2">
+        <RecordField label="Menarche" value={menarche} />
+        <RecordField label="Cycles" value={cycles} />
+        <RecordField label="Concerns" value={flags} />
+        <RecordField label="Hygiene practice" value={d.hygienePractice} />
+        <RecordField label="Anaemia" value={d.anaemia} />
+        <RecordField label="Counselling" value={(d.counselling || []).join(', ')} />
+      </div>
+      <RemarksBlock data={d} />
+    </div>
+  );
+}
+
 /** Fallback for unrecognized specialty — show key-value pairs cleanly. */
 function GenericRecordCard({ d }: { d: any }) {
   const entries = Object.entries(d).filter(([k]) => !['status', 'assessment', 'clinicalFindings', 'diagnosis', 'remarks', 'medicines', 'advice', 'referralReason', 'referralDept', 'urgency'].includes(k));
@@ -1809,6 +2006,8 @@ function SpecialistRecordBody({ category, d }: { category: string; d: any }) {
     case 'ENT': return <ENTRecordCard d={d} />;
     case 'Skin_Specialist': return <SkinRecordCard d={d} />;
     case 'Community_Medicine': return <CommunityMedRecordCard d={d} />;
+    case 'Pediatrics': return <PediatricsRecordCard d={d} />;
+    case 'OBGYN': return <OBGYNRecordCard d={d} />;
     default: return <GenericRecordCard d={d} />;
   }
 }
@@ -1820,6 +2019,8 @@ const SPECIALIST_META: Record<string, { icon: React.ReactNode; label: string }> 
   ENT: { icon: <Ear className="h-4 w-4 text-[#6B7280]" />, label: 'ENT' },
   Skin_Specialist: { icon: <Scan className="h-4 w-4 text-[#6B7280]" />, label: 'Dermatology' },
   Community_Medicine: { icon: <Stethoscope className="h-4 w-4 text-[#6B7280]" />, label: 'Community Medicine' },
+  Pediatrics: { icon: <SpecialtyIcon specialty="Pediatrics" className="h-4 w-4 text-[#6B7280]" />, label: 'Paediatrics' },
+  OBGYN: { icon: <SpecialtyIcon specialty="OBGYN" className="h-4 w-4 text-[#6B7280]" />, label: 'Obstetrics & Gynaecology' },
 };
 
 function OtherRecordsPanel({ studentId, eventId, currentCategory }: {
@@ -2419,7 +2620,7 @@ function ClinicalWorkflow({ user, campId, campName, campSchoolId, onBack }: {
                     )}
                     <div className="mt-3">
                       <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-[#9CA3AF]">Domain progress</p>
-                      <DomainProgressBar examinedCategories={selectedStudent.examined_categories} />
+                      <DomainProgressBar examinedCategories={selectedStudent.examined_categories} gender={selectedStudent.gender} />
                     </div>
                   </div>
                 </div>
@@ -2454,6 +2655,18 @@ function ClinicalWorkflow({ user, campId, campName, campSchoolId, onBack }: {
                 {specialistCategory === 'Skin_Specialist' && <SkinExamForm data={examData} onChange={handleExamChange} doctorInfo={user} studentInfo={selectedStudent} campName={campName} />}
                 {specialistCategory === 'Community_Medicine' && <CommunityMedForm data={examData} onChange={handleExamChange} doctorInfo={user} studentInfo={selectedStudent} campName={campName} />}
                 {specialistCategory === 'Other' && <CommunityMedForm data={examData} onChange={handleExamChange} doctorInfo={user} studentInfo={selectedStudent} campName={campName} />}
+                {specialistCategory === 'Pediatrics' && <PediatricsExamForm data={examData} onChange={handleExamChange} doctorInfo={user} studentInfo={selectedStudent} campName={campName} />}
+                {specialistCategory === 'OBGYN' && (
+                  specialtyAppliesTo('OBGYN', selectedStudent.gender)
+                    ? <OBGYNExamForm data={examData} onChange={handleExamChange} doctorInfo={user} studentInfo={selectedStudent} campName={campName} />
+                    : (
+                      <div className="py-10 text-center">
+                        <SpecialtyIcon specialty="OBGYN" className="mx-auto mb-3 h-8 w-8 text-[#D1D5DB]" />
+                        <p className="text-sm font-semibold text-[#6B7280]">Not applicable</p>
+                        <p className="mt-1 text-xs text-[#9CA3AF]">The OBGYN examination is only for female students.</p>
+                      </div>
+                    )
+                )}
               </div>
 
               {/* ── E. Other specialists' records (read-only) ── */}

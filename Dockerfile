@@ -37,9 +37,8 @@ COPY server.py .
 # Expose port
 EXPOSE 5000
 
-# Default env vars
+# Default port
 ENV PORT=5000
-ENV SECRET_KEY=local-dev-secret-key
 
 # Start with database initialization, then gunicorn
 CMD sh -c 'python -c "import server; server.init_db()" && exec gunicorn server:app --bind 0.0.0.0:5000 --workers 2 --timeout 120'

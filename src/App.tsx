@@ -5,6 +5,7 @@ import SchoolDashboard from './SchoolDashboard';
 import OfflineBanner from './components/OfflineBanner';
 import UpdatePrompt from './components/UpdatePrompt';
 import { usePWAInstall } from './hooks/usePWAInstall';
+import { isSpecialistRole, getSpecialty, SpecialtyIcon } from './constants/specialties';
 import {
   Activity, Stethoscope, ActivitySquare,
   LogOut, ShieldCheck, Sun, Moon, School,
@@ -22,14 +23,8 @@ type User = {
   designation?: string;
 };
 
-// Specialist categories
-const SPECIALIST_ROLES = [
-  'Community_Medicine', 'Dental', 'ENT',
-  'Eye_Specialist', 'Skin_Specialist', 'Other',
-];
-
 function isSpecialist(role: string) {
-  return SPECIALIST_ROLES.includes(role);
+  return isSpecialistRole(role);
 }
 
 // --- Main App Component ---
@@ -247,26 +242,17 @@ export default function App() {
 }
 
 function formatRoleDisplay(role: string): string {
-  switch (role) {
-    case 'Community_Medicine': return 'Community Medicine';
-    case 'Eye_Specialist': return 'Ophthalmology';
-    case 'Skin_Specialist': return 'Dermatology';
-    case 'School POC': return 'School POC';
-    default: return role;
-  }
+  return getSpecialty(role)?.label ?? role;
 }
 
 function getRoleIcon(role: string) {
   switch (role) {
     case 'Admin': return <Activity className="w-5 h-5" />;
     case 'School POC': return <School className="w-5 h-5" />;
-    case 'Community_Medicine': return <HeartPulse className="w-5 h-5" />;
-    case 'Dental': return <span className="text-lg">🦷</span>;
-    case 'ENT': return <Ear className="w-5 h-5" />;
-    case 'Eye_Specialist': return <Eye className="w-5 h-5" />;
-    case 'Skin_Specialist': return <Scan className="w-5 h-5" />;
-    case 'Other': return <Stethoscope className="w-5 h-5" />;
-    default: return <Activity className="w-5 h-5" />;
+    default:
+      return isSpecialistRole(role)
+        ? <SpecialtyIcon specialty={role} className="w-5 h-5" />
+        : <Activity className="w-5 h-5" />;
   }
 }
 

@@ -3,21 +3,23 @@ import json
 from datetime import datetime
 import psycopg2
 import psycopg2.extras
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, session
 
 from app.db import get_db_conn
 from app.helpers import rows_to_list
 from app.services.audit import log_audit
+from app.helpers import login_required
 
 logger = logging.getLogger('aiims.health')
 bp = Blueprint('health', __name__)
 
 @bp.route("/api/health-records", methods=["POST"])
+@login_required
 def api_create_health_record():
     data = request.get_json(force=True)
     student_id = data.get("student_id")
     event_id = data.get("event_id", data.get("camp_id", 1))
-    doctor_id = data.get("doctor_id")
+    doctor_id = session["user"]["username"]
     category = data.get("category")
     json_data = data.get("json_data")
     ts = datetime.utcnow().isoformat()
@@ -38,6 +40,7 @@ def api_create_health_record():
 
 
 @bp.route("/api/health-records/exam", methods=["POST"])
+@login_required
 def api_save_full_exam():
     """Save a specialist examination (upsert by student + event + category).
     Enforces role-based ownership: the doctor's role must match specialist_category.
@@ -45,7 +48,7 @@ def api_save_full_exam():
     data = request.get_json(force=True)
     student_id = data.get("student_id")
     event_id = data.get("event_id", data.get("camp_id", 1))
-    doctor_id = data.get("doctor_id", "doctor")
+    doctor_id = session["user"]["username"]
     specialist_category = data.get("specialist_category", "FullExam")
     exam_data = data.get("exam_data", {})
     ts = datetime.utcnow().isoformat()

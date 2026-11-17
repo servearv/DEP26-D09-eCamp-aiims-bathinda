@@ -8,6 +8,7 @@ from app.db import get_db_conn
 from app.helpers import row_to_dict, rows_to_list, normalize_date, compute_event_status
 from app.services.audit import log_audit
 from app.services.email import send_email_async
+from app.helpers import login_required
 
 logger = logging.getLogger('aiims.schools')
 bp = Blueprint('schools', __name__)
@@ -39,10 +40,14 @@ def api_search_schools():
 
 
 @bp.route("/api/camp-requests", methods=["POST"])
+@login_required
 def api_create_camp_request():
     """School POC submits a camp request."""
     data = request.get_json(force=True)
-    username = data.get("username", "").strip()
+    sess_user = session["user"]
+    if sess_user.get("role") != "School POC":
+        return jsonify({"success": False, "message": "School POC access required"}), 403
+    username = sess_user["username"]
     preferred_date = data.get("preferred_date", "").strip()
     if not preferred_date:
         return jsonify({"success": False, "message": "Preferred date is required"}), 400
@@ -141,10 +146,13 @@ def api_camp_requests_count():
 
 
 @bp.route("/api/camp-requests/<int:request_id>/approve", methods=["POST"])
+@login_required
 def api_approve_camp_request(request_id):
     """Admin approves a camp request and creates a real Event."""
     sess_user = session.get("user")
-    reviewer = sess_user["username"] if sess_user else "admin"
+    if sess_user.get("role") != "Admin":
+        return jsonify({"success": False, "message": "Admin access required"}), 403
+    reviewer = sess_user["username"]
     data = request.get_json(force=True) or {}
 
     with get_db_conn() as conn:
@@ -241,10 +249,13 @@ def api_approve_camp_request(request_id):
 
 
 @bp.route("/api/camp-requests/<int:request_id>/reject", methods=["POST"])
+@login_required
 def api_reject_camp_request(request_id):
     """Admin rejects a camp request."""
     sess_user = session.get("user")
-    reviewer = sess_user["username"] if sess_user else "admin"
+    if sess_user.get("role") != "Admin":
+        return jsonify({"success": False, "message": "Admin access required"}), 403
+    reviewer = sess_user["username"]
 
     with get_db_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)

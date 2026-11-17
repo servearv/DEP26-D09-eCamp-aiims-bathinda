@@ -4,7 +4,10 @@ import random
 import string
 import json
 import logging
+from functools import wraps
 from datetime import date
+import bcrypt
+from flask import jsonify, session
 
 logger = logging.getLogger('aiims')
 
@@ -66,6 +69,32 @@ def user_public(u: dict) -> dict:
         'designation': u.get('designation', ''),
         'specialization': u.get('specialization', ''),
     }
+
+
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(password: str, stored_password: str) -> tuple[bool, bool]:
+    """Return (valid, needs_rehash) for bcrypt or legacy plaintext values."""
+    if not stored_password:
+        return False, False
+    if stored_password.startswith(("$2a$", "$2b$", "$2y$")):
+        try:
+            return bcrypt.checkpw(password.encode("utf-8"), stored_password.encode("utf-8")), False
+        except ValueError:
+            return False, False
+    return password == stored_password, password == stored_password
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get("user"):
+            return jsonify({"success": False, "message": "Login required"}), 401
+        return view(*args, **kwargs)
+
+    return wrapped
 
 
 def normalize_date(raw: str) -> str:

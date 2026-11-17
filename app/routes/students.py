@@ -7,19 +7,21 @@ import random
 import re
 from datetime import datetime, date
 
-from flask import Blueprint, request, jsonify, Response, current_app
+from flask import Blueprint, request, jsonify, Response, current_app, session
 import psycopg2
 import psycopg2.extras
 
 from app.db import get_db_conn
 from app.helpers import row_to_dict, rows_to_list, normalize_date
 from app.services.audit import log_audit
+from app.helpers import login_required
 
 logger = logging.getLogger('aiims.students')
 bp = Blueprint('students', __name__)
 
 
 @bp.route("/api/students", methods=["POST"])
+@login_required
 def api_create_student():
     """Create a single student (used by doctor workflow and school dashboard)."""
     data = request.get_json(force=True)
@@ -32,7 +34,7 @@ def api_create_student():
     blood_group = data.get("blood_group", "")
     father_name = data.get("father_name", "")
     phone = data.get("phone", "")
-    user_id = data.get("user_id", "")
+    user_id = session["user"]["username"]
     event_id = data.get("event_id", 1)
     added_by = data.get("added_by", user_id or "")
     status = data.get("status", "Pending Examination")
@@ -81,12 +83,13 @@ def api_create_student():
 
 
 @bp.route("/api/students/bulk", methods=["POST"])
+@login_required
 def api_bulk_create_students():
     """Bulk create students from a list. Returns success/error arrays."""
     data = request.get_json(force=True)
     students_data = data.get("students", [])
     event_id = data.get("event_id", 1)
-    added_by = data.get("added_by", "")
+    added_by = session["user"]["username"]
 
     success_list = []
     error_list = []
@@ -354,6 +357,7 @@ def api_students_search():
 
 
 @bp.route("/api/students/<int:student_id>/status", methods=["PUT"])
+@login_required
 def api_update_student_status(student_id):
     """Update student basic status (like marking them absent)."""
     data = request.get_json(force=True)
@@ -378,6 +382,7 @@ def api_student_by_id(student_id):
 
 
 @bp.route("/api/students/<int:student_id>", methods=["PUT"])
+@login_required
 def api_update_student(student_id):
     """Update student demographics (used by teacher/admin for general info autosave)."""
     data = request.get_json(force=True)
@@ -407,12 +412,13 @@ def api_update_student(student_id):
         cur.execute("SELECT * FROM Students WHERE student_id = %s", (student_id,))
         student = cur.fetchone()
 
-    log_audit(data.get("user_id", "teacher"), "UPDATE_STUDENT",
+    log_audit(session["user"]["username"], "UPDATE_STUDENT",
               f"Updated student {student_id}")
     return jsonify({"success": True, "student": row_to_dict(student)})
 
 
 @bp.route("/api/students/<int:student_id>/general-info", methods=["PUT"])
+@login_required
 def api_upsert_general_info(student_id):
     """Upsert vitals + symptoms for a student (autosave endpoint)."""
     data = request.get_json(force=True)
@@ -421,7 +427,7 @@ def api_upsert_general_info(student_id):
     weight = data.get("weight", "")
     bmi = data.get("bmi", "")
     symptoms_json = json.dumps(data.get("symptoms", []))
-    filled_by = data.get("filled_by", "")
+    filled_by = session["user"]["username"]
     ts = datetime.utcnow().isoformat()
 
     with get_db_conn() as conn:

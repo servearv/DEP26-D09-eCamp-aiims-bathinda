@@ -14,6 +14,7 @@ from app.routes.schools import bp as schools_bp
 from app.routes.students import bp as students_bp
 from app.routes.health import bp as health_bp
 from app.routes.admin import bp as admin_bp
+from app.routes.exports import bp as exports_bp
 
 import logging
 logger = logging.getLogger('aiims.app')
@@ -78,6 +79,7 @@ def create_app():
     app.register_blueprint(students_bp)
     app.register_blueprint(health_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(exports_bp)
 
     # Setup SPA routing
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

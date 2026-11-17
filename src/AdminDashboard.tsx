@@ -4,10 +4,13 @@ import {
   MapPin, Phone, Mail, Clock, Tag, ChevronDown, ChevronRight,
   Activity, FileText, Stethoscope, School, ExternalLink,
   HeartPulse, Eye, Ear, Scan, Bell, ClipboardCheck, AlertCircle, Loader2,
-  ScrollText, RefreshCw, Filter, ShieldCheck, Trash2, Upload
+  ScrollText, RefreshCw, Filter, ShieldCheck, Trash2, Upload, Printer
 } from 'lucide-react';
 import AnalyticsPanel, { DepartmentBreakdownChart } from './components/AnalyticsCharts';
 import { AddStudentModal, CSVUploadPanel } from './components/StudentModals';
+import { SPECIALTIES, SpecialtyIcon, specialtyDarkColor, specialtyLabel } from './constants/specialties';
+import { printSlips, fetchSlips, openPrintWindow } from './lib/printSlip';
+import DownloadDataButton from './components/DownloadDataButton';
 
 type User = { username: string; role: string; name: string };
 
@@ -22,13 +25,7 @@ const TAG_STYLES: Record<string, string> = {
 const TAGS = ['Upcoming', 'Ongoing', 'Completed', 'Cancelled'];
 
 // Specialist roles for registration
-const SPECIALIST_ROLES = [
-  { key: 'Community_Medicine', label: 'Community Medicine' },
-  { key: 'Dental', label: 'Dental' },
-  { key: 'ENT', label: 'ENT' },
-  { key: 'Eye_Specialist', label: 'Ophthalmology' },
-  { key: 'Skin_Specialist', label: 'Dermatology' },
-];
+const SPECIALIST_ROLES = SPECIALTIES.map(s => ({ key: s.key, label: s.label }));
 
 const ALL_REGISTER_ROLES = [
   { key: 'Admin', label: 'Admin' },
@@ -38,36 +35,15 @@ const ALL_REGISTER_ROLES = [
 
 // Category display helpers
 function getCategoryIcon(cat: string) {
-  switch (cat) {
-    case 'Community_Medicine': return <HeartPulse className="w-3.5 h-3.5" />;
-    case 'Dental': return <span className="text-xs">🦷</span>;
-    case 'ENT': return <Ear className="w-3.5 h-3.5" />;
-    case 'Eye_Specialist': return <Eye className="w-3.5 h-3.5" />;
-    case 'Skin_Specialist': return <Scan className="w-3.5 h-3.5" />;
-    case 'Other': return <Stethoscope className="w-3.5 h-3.5" />;
-    default: return <Stethoscope className="w-3.5 h-3.5" />;
-  }
+  return <SpecialtyIcon specialty={cat} className="w-3.5 h-3.5" />;
 }
 
 function getCategoryColor(cat: string): string {
-  switch (cat) {
-    case 'Community_Medicine': return 'bg-rose-500/20 text-rose-400 border-rose-500/30';
-    case 'Dental': return 'bg-sky-500/20 text-sky-400 border-sky-500/30';
-    case 'ENT': return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
-    case 'Eye_Specialist': return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
-    case 'Skin_Specialist': return 'bg-violet-500/20 text-violet-400 border-violet-500/30';
-    case 'Other': return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-    default: return 'bg-slate-500/20 text-slate-400 border-slate-500/30';
-  }
+  return specialtyDarkColor(cat);
 }
 
 function formatCategoryLabel(cat: string): string {
-  switch (cat) {
-    case 'Community_Medicine': return 'Community Medicine';
-    case 'Eye_Specialist': return 'Ophthalmology';
-    case 'Skin_Specialist': return 'Dermatology';
-    default: return cat;
-  }
+  return specialtyLabel(cat);
 }
 
 interface EventData {
@@ -561,6 +537,28 @@ function EventExpandedPanel({ eventId, event, user, onRefresh }: {
 
   const activeFilterCount = [classFilter, sectionFilter, genderFilter, statusFilter].filter(Boolean).length;
 
+  // Prescription/referral slips (one page per department visit)
+  const [slipBusy, setSlipBusy] = useState<'all' | number | null>(null);
+  const handlePrintSlips = async (studentId?: number) => {
+    const win = openPrintWindow();
+    if (!win) return;
+    setSlipBusy(studentId ?? 'all');
+    try {
+      const slips = await fetchSlips(eventId, studentId ? { studentId } : {});
+      if (!slips.length) {
+        win.close();
+        alert(studentId ? 'No prescription or referral for this student yet.' : 'No prescriptions or referrals in this camp yet.');
+        return;
+      }
+      printSlips(slips, win);
+    } catch (e: any) {
+      win.close();
+      alert(e?.message || 'Could not load slips');
+    } finally {
+      setSlipBusy(null);
+    }
+  };
+
   const sectionBtns = [
     { key: 'details' as const, label: 'Details', icon: <MapPin className="w-3.5 h-3.5" /> },
     { key: 'students' as const, label: 'Students', icon: <Users className="w-3.5 h-3.5" /> },
@@ -609,6 +607,12 @@ function EventExpandedPanel({ eventId, event, user, onRefresh }: {
                 <button onClick={() => setShowCSVUpload(true)}
                   className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-bold transition-all">
                   <Upload className="w-3.5 h-3.5" /><span>Excel Upload</span>
+                </button>
+                <button onClick={() => handlePrintSlips()} disabled={slipBusy !== null}
+                  className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 text-xs font-bold transition-all disabled:opacity-50"
+                  title="One page per department prescription/referral">
+                  {slipBusy === 'all' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                  <span>Download all slips</span>
                 </button>
               </div>
             </div>
@@ -664,6 +668,7 @@ function EventExpandedPanel({ eventId, event, user, onRefresh }: {
                       <th className="px-3 py-2 font-medium">Gender</th>
                       <th className="px-3 py-2 font-medium">Age</th>
                       <th className="px-3 py-2 font-medium">Status</th>
+                      <th className="px-3 py-2 font-medium">Slips</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/50">
@@ -686,6 +691,16 @@ function EventExpandedPanel({ eventId, event, user, onRefresh }: {
                           <td className="px-3 py-2 text-slate-300">{s.gender === 'M' ? 'Male' : s.gender === 'F' ? 'Female' : '—'}</td>
                           <td className="px-3 py-2 text-slate-300">{s.age || '—'}</td>
                           <td className={`px-3 py-2 font-semibold ${statusStyle}`}>{statusLabel}</td>
+                          <td className="px-3 py-2">
+                            {s.is_examined ? (
+                              <button onClick={() => handlePrintSlips(s.student_id)} disabled={slipBusy !== null}
+                                className="inline-flex items-center space-x-1 px-2 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 text-amber-400 border border-amber-500/30 text-[11px] font-bold disabled:opacity-50"
+                                title="Print this student's department slips">
+                                {slipBusy === s.student_id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Printer className="w-3 h-3" />}
+                                <span>Slips</span>
+                              </button>
+                            ) : <span className="text-slate-600">—</span>}
+                          </td>
                         </tr>
                       );
                     })}
@@ -728,6 +743,9 @@ function EventExpandedPanel({ eventId, event, user, onRefresh }: {
                   <button onClick={() => { setRecClassFilter(''); setRecSectionFilter(''); setRecGenderFilter(''); }}
                     className="text-xs text-red-400 hover:text-red-300 underline transition-colors">Clear</button>
                 )}
+                <div className="ml-auto">
+                  <DownloadDataButton eventId={eventId} filters={{ student_class: recClassFilter, section: recSectionFilter, gender: recGenderFilter }} />
+                </div>
               </div>
               {/* Active Volunteers */}
               {stats.staff.length > 0 && (
@@ -782,7 +800,8 @@ function EventExpandedPanel({ eventId, event, user, onRefresh }: {
                         let assessment = '—';
                         try {
                           const d = JSON.parse(rec.json_data);
-                          assessment = d.assessment === 'N' ? 'Normal' : d.assessment === 'O' ? 'Observation' : d.assessment === 'R' ? 'Referred' : '—';
+                          const st = d.status || d.assessment;
+                          assessment = st === 'N' ? 'Normal' : st === 'O' ? 'Observation' : st === 'R' ? 'Referred' : '—';
                         } catch { }
                         const assessColor = assessment === 'Normal' ? 'text-emerald-400' : assessment === 'Referred' ? 'text-red-400' : assessment === 'Observation' ? 'text-amber-400' : 'text-slate-400';
                         return (
